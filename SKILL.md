@@ -36,6 +36,7 @@ python scripts/knife_mod.py --audit           # 审计当前状态（可带刀�
 - 切换 = 原地改 4 个条目：knife_default_t/ct 模型 vmdl_c + viewmodel_inspects.vnmgraph+knife_default_t/ct 检视图 vnmgraph_c。条目 18B 结构 <IHHIIH>（crc、preload、archiveIndex、offset、length、0xFFFF 结尾），只重写前 16B，preload 置 0
 - 检视动画：段数/循环逻辑在检视图 vnmgraph_c 而非 clip；专属多段检视图只有蝴蝶/爪子/爪刃三种，其余为单段 inspects 变体；检视图按完整内容路径引用动画条目（原生直接加载，骨架天然匹配）
 - 已知限制：只能用各刀原色外观；皮肤涂装属服务端物品系统数据，本地 VPK 无法修改
+- 模型来源仅限官方 pak01 内 19 种原生刀：创意工坊地图无武器模型资产（实测 12 图 6505 模型 0 命中，全是环境资产）；外置/自制/创意工坊 VPK 挂载被签名链密码学锁死（详见 references/vpk-technique.md）
 
 ## 审计要点
 

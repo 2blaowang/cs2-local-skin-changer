@@ -42,6 +42,10 @@ python scripts/knife_mod.py --init --csgo "D:\Steam\steamapps\common\Counter-Str
 | 命名 `pak99.vpk` | 启动 fatal | `pak##` 未注册守卫直接拦截 |
 | 改名绕过守卫 | 静默无效 | 仍过不了签名链 |
 
+### 创意工坊模型同样不可用
+
+实测扫描 12 张订阅创意工坊地图的全部 6505 个模型：**0 个武器模型**。工坊只收录地图，地图里全是环境资产（烘焙网格、门窗、道具、装饰）——第一人称武器由客户端从官方 pak01 加载，地图作者不需要也不会内置武器模型。所以"从创意工坊提取刀模型"这条路在素材层面就不存在。
+
 签名链要求：内嵌公钥逐字节等于 Valve 钉扎公钥 + RSA-SHA256 验证签名 payload——伪造需要 Valve 私钥，密码学不可满足。GitHub/Gitee 上的"编译好 VPK mod"同样过不了这条链。
 
 所以唯一可行路线就是本工具的做法：**在已签名的 `pak01_dir.vpk` 内部做树条目指针重指向**。完整逆向细节见 [references/vpk-technique.md](references/vpk-technique.md)。
@@ -52,7 +56,8 @@ python scripts/knife_mod.py --init --csgo "D:\Steam\steamapps\common\Counter-Str
 ├── README.md                     # 本文件
 ├── SKILL.md                      # AI Agent 技能入口（ Trae/Claude 等 skill 规范）
 ├── scripts/
-│   └── knife_mod.py              # 主工具（切换/审计/回滚/init）
+│   ├── knife_mod.py              # 主工具（切换/审计/回滚/init）
+│   └── scan_workshop.py          # 创意工坊资产侦察（扫描订阅地图 VPK 模型清单）
 └── references/
     └── vpk-technique.md          # VPK 格式、引擎校验机制、踩坑记录与逆向结论
 ```
