@@ -1,0 +1,10 @@
+# 运行产物（不要提交）
+*.vpk
+*.vpk_c
+*.log
+*.bak*
+
+# 个人环境
+.vscode/
+.idea/
+__pycache__/
