@@ -47,8 +47,10 @@ python scripts/skin_mod.py --audit                                       # 审�
   - `legacy` = 有独立 `vmats/<kit>.vmat`，vcompmat 只是转交声明（约 4.2KB + 1.5KB 两条）
   - `composite` = 只有 vcompmat 完整节点图，无 vmat（约 5.8KB 一条，2023 年后新版工作室皮肤）
   - 跨形态互换必然图案错乱。**style 不是分界线**（style 7 里也有 45 个 composite），形态才是
+  - 判形态只看有没有 `vmats/<kit>.vmat`，不看名字也不看 style：`cu_glitter_deagle` 星尘拱廊名字带 `cu_`、style 7，但无 vmat，是 composite
 - 一条入口皮肤 = 一个可显示槽位。想同时看多个皮肤，需拥有多个入口（各自打补丁，`--stack` 叠加）
-- 实测成功：legacy→legacy（AK 火蛇/野荷、AWP 巨龙传说）、composite→composite（镀铬大炮→后翼弃兵、战鹰→吞天巨蛇）
+- 实测成功：legacy→legacy（AK 火蛇/野荷、AWP 巨龙传说、沙鹰 沙漠之狐、M4A4 咆哮）、composite→composite（镀铬大炮→后翼弃兵、战鹰→吞天巨蛇、书法涂鸦→星尘拱廊）
+- **style 已正交验证为无关变量**：变频器(2)→咆哮(7)、青铜装饰(5)→沙漠之狐(9)、书法涂鸦(9)→星尘拱廊(7) 全部成功，唯一失败样本是跨形态。无需收紧成"形态+style 双匹配"
 - 图标不变：背包/检视 UI 是预烘焙 panorama png
 
 ## 换肤流程 B：手套（`--glove`）

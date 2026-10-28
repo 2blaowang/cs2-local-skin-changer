@@ -108,10 +108,37 @@ def read_entry_raw(key):
         return f.read(e[5])
 
 
+_VTEX_ROOTS = None
+
+
+def _vtex_roots(tree):
+    """树内 vtex 条目的顶层目录集合 (materials/ items/assets/ stickers/ ...)
+
+    自动推导, 不硬编码: 新版 kit 的贴图在 items/assets/paintkits/ 下,
+    老版在 materials/ 下, 贴纸在 stickers/ 下。
+    """
+    global _VTEX_ROOTS
+    if _VTEX_ROOTS is None:
+        _VTEX_ROOTS = tuple(sorted({k.split(":", 1)[1].split("/")[0] + "/"
+                                    for k in tree
+                                    if k.startswith("vtex_c:") and "/" in k}))
+    return _VTEX_ROOTS
+
+
 def vtex_refs(key):
-    """解析 vmat 数据里引用的全部 .vtex 路径"""
-    return sorted(set(s[:-5].decode() for s in
-                      re.findall(rb"[\x20-\x7e]{6,}\.vtex", read_entry_raw(key))))
+    """解析 vmat/vcompmat 里引用的全部 .vtex 路径
+
+    二进制里的路径常被长度字节切碎, 正则会从残留片段起头, 匹配出
+    "ao_tga_9627e701"、"_psd_25c027da" 这类伪路径 (全量统计约 36%
+    是碎片)。只保留以树内真实顶层目录开头的完整路径。
+    """
+    roots = _vtex_roots(tree_cache) if tree_cache else ()
+    out = set()
+    for s in re.findall(rb"[\x20-\x7e]{6,}\.vtex", read_entry_raw(key)):
+        p = s[:-5].decode()
+        if not roots or p.startswith(roots):
+            out.add(p)
+    return sorted(out)
 
 
 def tex_targets(tree, wmap, w, kit):
@@ -121,7 +148,7 @@ def tex_targets(tree, wmap, w, kit):
         return None, []
     src_key = wmap[w][kit]
     skin_texs = [t for t in vtex_refs(src_key)
-                 if "paints/" in t and "/default_" not in t
+                 if ("paints/" in t or "paintkits/" in t) and "/default_" not in t
                  and "/shared/" not in t and "vmat_g" not in t]
     if not skin_texs:
         return None, []

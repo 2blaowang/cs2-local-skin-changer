@@ -218,24 +218,56 @@ CompositeMaterialSystem（蒙版裁剪/磨损/污渍/法线/paintseed 随机全�
 
 | 入口（拥有） | 目标（显示） | 形态 | 结果 |
 |---|---|---|---|
-| `cu_ak47_mastery` 精英之作 | `cu_fireserpent_ak47_bravo` 火蛇 | legacy→legacy | ✓ 蛇纹+底色+磨损，构图正确，与官方检视一致 |
-| `cu_ak47_mastery` | `cu_ak_island_floral` 野荷 | legacy→legacy | ✓ |
-| `cu_awp_vein` 毛细血管 | `cu_medieval_dragon_awp` 巨龙传说 | legacy→legacy | ✓ |
-| `hy_red_hex` 变频器 | `cu_m4a1_howling` 咆哮 | legacy→legacy（style 2→7） | 未反馈 |
-| `m4a4_green_camo` 战鹰 | `cu_m4a1_howling` 咆哮 | **composite→legacy** | ✗ 模板错乱 |
-| `awp_tempered` 镀铬大炮 | `awp_queens_gambit` 后翼弃兵 | composite→composite | ✓ |
-| `m4a4_green_camo` 战鹰 | `m4a4_falak` 吞天巨蛇 | composite→composite | ✓ |
+| `cu_ak47_mastery` 精英之作 | `cu_fireserpent_ak47_bravo` 火蛇 | legacy→legacy（style 7→7） | ✓ 蛇纹+底色+磨损，构图正确，与官方检视一致 |
+| `cu_ak47_mastery` | `cu_ak_island_floral` 野荷 | legacy→legacy（style 7→7） | ✓ |
+| `cu_awp_vein` 毛细血管 | `cu_medieval_dragon_awp` 巨龙传说 | legacy→legacy（style 7→7） | ✓ |
+| `hy_red_hex` 变频器 | `cu_m4a1_howling` 咆哮 | legacy→legacy（**style 2→7**） | ✓ |
+| **`am_bronze_sparkle` 青铜装饰** | **`gs_deagle_fennec` 沙漠之狐** | legacy→legacy（**style 5→9**） | ✓ |
+| `m4a4_green_camo` 战鹰 | `cu_m4a1_howling` 咆哮 | **composite→legacy**（style 9→7） | ✗ 模板错乱 |
+| `awp_tempered` 镀铬大炮 | `awp_queens_gambit` 后翼弃兵 | composite→composite（style 9→9） | ✓ |
+| `m4a4_green_camo` 战鹰 | `m4a4_falak` 吞天巨蛇 | composite→composite（style 9→9） | ✓ |
+| **`deagle_calligraff` 书法涂鸦** | **`cu_glitter_deagle` 星尘拱廊** | composite→composite（**style 9→7**） | ✓ |
 | `sporty_hunter` 大型猎物 | `sporty_purple` 潘多拉之盒（手套） | legacy→legacy | ✓ |
 
-结论：**同形态即互通**，与 style、与"皮肤新旧"都无关。
+结论：**同形态即互通，与 style 无关、与"皮肤新旧"无关。**
+
+这一点已被正交实验坐实——同一批样本里 style 相同和不同都成功，唯一失败的样本（战鹰→咆哮）是跨形态：
+
+| 实验 | 形态一致 | style 一致 | 结果 |
+|---|---|---|---|
+| 精英之作 → 火蛇 | ✓ | ✓ | ✓ |
+| 变频器 → 咆哮 | ✓ | ✗（2→7） | **✓** |
+| 青铜装饰 → 沙漠之狐 | ✓ | ✗（5→9） | **✓** |
+| 书法涂鸦 → 星尘拱廊 | ✓ | ✗（9→7） | **✓** |
+| 战鹰 → 咆哮 | **✗** | ✗ | **✗** |
+
+也就是说 style 只有 1、2、3、5、7、9、10 共同出现过在成功样本里，它决定的是**图案在 UV 上的铺法**（hydrographic/阳极/喷绘/枪匠），但材质条目的装载方式与它无关。工具无需收紧到"形态 + style 双匹配"，`form_of()` 单条拦截已经足够。
 
 ### composite 图谱为什么能整份移植
 
-- 图谱内所有引用都是**绝对路径**（`items/assets/paintkits/<系列>/<kit>_albedo_texture_*.vtex` 等），自带完整 5 张 PBR 图（albedo / normal / roughness / AO / material_mask，最大单张法线 13MB）
+- 图谱内所有引用都是**绝对路径**（`items/assets/paintkits/<系列>/<kit>_albedo_texture_*.vtex` 等），自带完整 PBR 图（albedo / normal / roughness / AO / material_mask，最大单张法线 13MB）。图**数量不固定**：千瓦收藏品那批是 5 张齐全，而 `set_graphic_design` 系列的 `cu_glitter_deagle` 星尘拱廊只有 albedo(11.3MB) + roughness(7.5MB) + sfx_mask(3.3MB) 三张，AO/metal 借用 `materials/default/` 共享图
+- **名字带 `cu_` 不等于 legacy**：星尘拱廊 style 7、名字老派，但无 vmat、贴图在 `items/assets/paintkits/set_graphic_design/` 下、走节点图装配，`form_of()` 判定为 composite。判形态只能看有没有 `vmats/<kit>.vmat`
 - 两份不同 kit 的图谱**逐字节级同构**：尾部节点字节几乎完全相同，只有数值参数与贴图路径不同
 - `Identifier` 字段只是节点 KV3 键名，不绑定 kit 名，不会被校验
 - 这类皮肤由画师交付成品图，没有 paintseed 程序化铺贴，因此**不存在**贴图模式那种"图案平铺、构图散掉"问题，效果天生与官方一致
 - 目录不按 kit 名走：`weapons/paints/community/community_NN/<kit>`（按收藏品编号）与 `weapons/paints/set_arabesque/<kit>`（按系列）混用（吞天巨蛇与无上之焰同属 `set_arabesque`），配对必须按 kit 名末端匹配，不能用固定前缀
+
+### 贴图引用的解析陷阱（曾长期误报"缺图"）
+
+拿正则 `[\x20-\x7e]{6,}\.vtex` 在 vmat/vcompmat 原始字节里扫引用，会**从被长度字节切碎的残留片段起头**，产出 `ao_tga_9627e701`、`_psd_25c027da`、`_tga_b0d8345c` 这类伪路径。
+
+全量统计：23540 个材质条目共 208671 条引用，其中 **75235 条（36%）是碎片**。表现就是校验时稳定报"缺 1~2 张图"，每次都要人工排查一遍。
+
+正确做法是**从树里 `vtex_c:` 条目自动推导顶层目录白名单**，只保留以真实根开头的完整路径：
+
+```
+agents/ characters/ compmatcache/ dev/ gloves/ items/ materials/
+models/ panorama/ particles/ patches/ stickers/ textures/ weapons/ workshop/
+```
+
+`skin_mod.vtex_refs()` 已按此实现，修完后所有目标 kit 的"缺图"归零。
+
+顺带一个相关坑：新版 kit 的贴图在 `items/assets/paintkits/` 下（不是 `materials/`），所以任何按 `materials/` 或 `paints/` 过滤的逻辑都会把它们筛空——`tex_targets()` 的源筛选必须同时认 `paints/` 与 `paintkits/`。
 
 ### 局限
 
