@@ -1,6 +1,6 @@
 ---
 name: cs2-vpk-knife-mod
-description: CS2 本地视觉替换与 VPK 树条目重指向补丁，支持 19 种原生刀型一键切换、36 种武器的皮肤整材质换肤（拥有皮肤时引擎跑完整合成管线，官方级效果）、72 个手套皮肤同家族互换、审计与回滚。当用户提到 CS2 换刀、蝴蝶刀、爪子刀、VPK 修改、模型替换、皮肤替换、手套替换、检视动画时使用。不适用于官方 VAC 对局修改或多人游戏作弊。
+description: CS2 本地视觉替换与 VPK 树条目重指向补丁，支持 19 种原生刀型一键切换、36 种武器的皮肤整材质换肤（拥有皮肤时引擎跑完整合成管线，官方级效果）、72 个手套皮肤同家族互换、跨武器/跨形态试探（--force，如把刀的多普勒/宝石挂到枪上）、按名字查同族材质（--family）、审计与回滚。当用户提到 CS2 换刀、蝴蝶刀、爪子刀、VPK 修改、模型替换、皮肤替换、多普勒/蓝宝石/黑珍珠、手套替换、检视动画时使用。不适用于官方 VAC 对局修改或多人游戏作弊。
 ---
 
 # CS2 VPK 本地视觉替换（换刀 + 换肤 + 换手套）
@@ -37,21 +37,38 @@ python scripts/knife_mod.py --audit           # 审计当前状态（可带刀�
 ```
 python scripts/skin_mod.py --weapons                                     # 列出可换肤武器 (36)
 python scripts/skin_mod.py --list ak47                                   # 列出皮肤，带 [legacy]/[composite] 标记
+python scripts/skin_mod.py --family doppler                              # 按名字查同族皮肤及其形态（多普勒/宝石/渐变/手套）
 python scripts/skin_mod.py --swap ak47 cu_ak47_mastery cu_ak_island_floral          # 精英之作 → 野荷
 python scripts/skin_mod.py --swap awp awp_tempered awp_queens_gambit --stack        # 叠加（保留已有补丁）
+python scripts/skin_mod.py --swap mp9 mp9_nexus am_sapphire_marbleized --force --stack  # 跨武器+跨形态（只有入口 vcompmat 一条）
 python scripts/skin_mod.py --revert                                      # 还原（与换刀共用备份）
 python scripts/skin_mod.py --audit                                       # 审计
 ```
 
-- **唯一的硬约束是"资源形态"必须相同**（`form_of()` 已硬拦）：
-  - `legacy` = 有独立 `vmats/<kit>.vmat`，vcompmat 只是转交声明（约 4.2KB + 1.5KB 两条）
-  - `composite` = 只有 vcompmat 完整节点图，无 vmat（约 5.8KB 一条，2023 年后新版工作室皮肤）
-  - 跨形态互换必然图案错乱。**style 不是分界线**（style 7 里也有 45 个 composite），形态才是
+- **配对分三档，越往下越不保证效果**：
+  1. **同武器 + 同形态** —— 官方级效果，1~2 条条目，无需额外参数
+  2. **同武器 + 跨形态** —— 需 `--force`。结构上是合法的（legacy 的 vcompmat 就是 `CCompositeMaterialEditorDoc` 的单节点图，和 composite 图同一个文档类），但**结果不稳定**：战鹰→咆哮 ✗、中枢→多普勒 ✓，只能逐例试
+  3. **跨武器** —— 需 `--force`。图案按**目标武器**的 UV 重新展开，刀→枪（MP9 中枢→多普勒/蓝宝石/黑珍珠）已验可出效果，但不保证是原皮肤的构图
+- 两种形态：
+  - `legacy` = 有独立 `vmats/<kit>.vmat`；vcompmat 是一个 `SPECIFIC_MATERIAL` 单节点图，把材质转交给该 vmat（约 4.2KB + 1.5KB 两条）
+  - `composite` = 只有 vcompmat 完整节点图（albedo/ao/mask/normal/rough 全在图里），无 vmat（约 5.8KB 一条，2023 年后新版工作室皮肤）
   - 判形态只看有没有 `vmats/<kit>.vmat`，不看名字也不看 style：`cu_glitter_deagle` 星尘拱廊名字带 `cu_`、style 7，但无 vmat，是 composite
-- 一条入口皮肤 = 一个可显示槽位。想同时看多个皮肤，需拥有多个入口（各自打补丁，`--stack` 叠加）
-- 实测成功：legacy→legacy（AK 火蛇/野荷、AWP 巨龙传说、沙鹰 沙漠之狐、M4A4 咆哮）、composite→composite（镀铬大炮→后翼弃兵、战鹰→吞天巨蛇、书法涂鸦→星尘拱廊）
-- **style 已正交验证为无关变量**：变频器(2)→咆哮(7)、青铜装饰(5)→沙漠之狐(9)、书法涂鸦(9)→星尘拱廊(7) 全部成功，唯一失败样本是跨形态。无需收紧成"形态+style 双匹配"
+  - **style 是无关变量**（它只决定图案在 UV 上的铺法：hydrographic/阳极/喷绘/枪匠），别拿它当判据
+- **入口永远是 vcompmat 那一条**（`items_game` 的 `composite_material_path` 指向它）。整换时两侧都有 vmat 才配对 vmat，只有一侧有就只动 vcompmat——目标文档内部用绝对路径引自己的 vmat/贴图，不需要代劳
+- `--force` 越过"同武器 / 同形态"两道校验，`swap_targets()` 会把风险逐条打印出来
+- 一条入口皮肤 = 一个可显示槽位。想同时看多个皮肤，需拥有多个入口（各自打补丁，`--stack` 叠加）；同一槽位换第二款是覆盖，不是并列
+- 实测成功：legacy→legacy（AK 火蛇/野荷、AWP 巨龙传说、沙鹰 沙漠之狐、M4A4 咆哮、M4A1-S 夜无眠→冒险家乐园）、composite→composite（镀铬大炮→后翼弃兵、战鹰→吞天巨蛇、书法涂鸦→星尘拱廊）、手套（大型猎物→潘多拉之盒）
+- **style 已正交验证为无关变量**：变频器(2)→咆哮(7)、青铜装饰(5)→沙漠之狐(9)、书法涂鸦(9)→星尘拱廊(7)、夜无眠(9)→冒险家乐园(7) 全部成功。无需收紧成"形态+style 双匹配"
 - 图标不变：背包/检视 UI 是预烘焙 panorama png
+
+### 多普勒 / 宝石系（最常用的跨武器试验场）
+
+武器侧 26 个 kit，全部 legacy + style 5，只有一张 `anodized_multi` 程序化底图 + 一堆色相参数，不依赖 paintmask，所以最适合往别的枪上挂。
+
+- **换阶段编号不会变色**：`am_doppler_phase1`~`4` 的 vmat 逐字节只差 355~411 字节（几乎全是材质名），刀上的"第几阶段"色相来自 paintseed 区间（服务端数据），本地拿不到
+- **想要确定颜色只能走宝石系**：`am_sapphire_marbleized` 蓝、`am_ruby_marbleized` 红、`am_emerald_marbleized` 绿、`am_blackpearl_marbleized` 黑（底图换成 `smoke_psd`，纹路更细、最暗最亮彩）
+- 伽玛多普勒（`am_gamma_doppler_phase1`~`4`）是绿系，和普通多普勒差 2808 字节；`_glock` / `_widow` 是按特定武器 UV 调过构图密度的变体，可以对比着试
+- 查同族：`--family doppler`、`--family "sapphire|ruby|emerald|blackpearl"`
 
 ## 换肤流程 B：手套（`--glove`）
 

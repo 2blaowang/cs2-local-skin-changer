@@ -13,6 +13,7 @@ CS2 武器皮肤本地替换工具 (paint kit 树条目重指向)
 用法:
   python skin_mod.py --weapons              # 列出可换肤武器
   python skin_mod.py --list ak47            # 列出 ak47 可用皮肤
+  python skin_mod.py --family doppler       # 按名字查同族皮肤 (多普勒/宝石系/渐变…) 及其形态
   python skin_mod.py --skin ak47 gs_ak47_bloodsport   # AK47 换血竞
   python skin_mod.py --skin ak47 gs_ak47_bloodsport --tex --layers   # 连带 rough/ao/normal
   python skin_mod.py --swap ak47 cu_ak47_mastery cu_fireserpent_ak47_bravo  # 已有皮肤整换材质
@@ -219,26 +220,42 @@ def _material_keys(tree, kit):
     return out
 
 
+ROLE_OF = {VMATS: "vmat", COMPMAT: "vcomp"}
+
+
 def swap_targets(tree, w, owned, want):
     """整材质换肤: 已拥有皮肤的资源条目 -> 想显示皮肤的资源条目
 
     与 --tex 的根本区别: 引擎照旧按 paintindex 跑完整合成管线
     (蒙版裁剪/磨损/污渍/法线/paintseed), 我们只把"配方"换成目标皮肤的。
-    必须同武器 (UV 相同), 且两类资源各自配对 (vmat->vmat, vcompmat->vcompmat)。
 
-    两种形态 (不可混用, 见 form_of):
-      legacy: 有 vmats/<kit>.vmat, vcompmat 只是"转交给该 vmat"的声明
-      composite: items_game 里带 composite_material_path, 只有 vcompmat (完整节点图)
+    返回 (plan, blockers):
+      plan     可执行的配对 [(目标条目, 源条目, 角色)]
+      blockers 阻断原因 (跨武器 / 缺资源), 空列表表示无风险
+
+    两种形态 (见 form_of):
+      legacy: 有 vmats/<kit>.vmat, vcompmat 是单节点图 —— 一个
+              SPECIFIC_MATERIAL 节点把材质转交给该 vmat
+      composite: 只有 vcompmat, 内含完整节点图 (albedo/ao/mask/normal/rough)
+    入口始终是 vcompmat (items_game 的 composite_material_path 指向它),
+    所以跨形态时只要换 vcompmat 这一个条目即可 —— 目标文档内部用绝对
+    路径引它自己的 vmat/贴图, 不需要我们代劳。
     """
     a, b = _material_keys(tree, owned), _material_keys(tree, want)
-    if not a or not b:
-        return None
+    blockers = []
+    if not a:
+        blockers.append(f"{owned} 没有任何材质资源条目")
+    if not b:
+        blockers.append(f"{want} 没有任何材质资源条目")
+    if blockers:
+        return [], blockers
     kw = kit_weapon_map(tree)
-    for kit in (owned, want):  # 同武器校验: 检视图名必须归到这把武器
-        if kw.get(kit) and w not in kw[kit]:
-            return None
-    roles = {VMATS: "vmat", COMPMAT: "vcomp"}
-    return [(a[p], b[p], roles[p]) for p in (VMATS, COMPMAT) if p in a and p in b]
+    for kit, side in ((owned, "拥有侧"), (want, "目标侧")):
+        ws = kw.get(kit) or set()
+        if ws and w not in ws:
+            blockers.append(f"{side} {kit} 的检视图归 {','.join(sorted(ws))}, 不是 {w}")
+    plan = [(a[p], b[p], ROLE_OF[p]) for p in (COMPMAT, VMATS) if p in a and p in b]
+    return plan, blockers
 
 
 def kit_style(tree):
@@ -392,26 +409,31 @@ def _commit(plan, stack=False):
 
 
 def cmd_swap(tree, wmap, w, owned, want, stack=False, force=False):
-    plan = swap_targets(tree, w, owned, want)
-    if plan is None:
-        print(f"[!] {w} 下缺少 {owned} 或 {want}, 或两者不属于同一把武器; 见 --list {w}")
-        return False
+    plan, blockers = swap_targets(tree, w, owned, want)
+    cn = cn_names(tree)
     fo, fw = form_of(tree, owned), form_of(tree, want)
     st = kit_style(tree)
-    print(f"[*] 整材质换肤 {w}: {owned} ({COMMON.get(owned, '已拥有')})"
-          f"  ==>  {want} ({COMMON.get(want, '想显示')})")
+    print(f"[*] 整材质换肤 {w}: {owned} ({cn.get(owned) or COMMON.get(owned, '已拥有')})"
+          f"  ==>  {want} ({cn.get(want) or COMMON.get(want, '想显示')})")
     for k, fm in ((owned, fo), (want, fw)):
         style, cp = st.get(k, ("?", None))
         print(f"    {k:<34} style {style:<2} {fm:<9} {cp or '(默认 legacy 路径)'}")
-    if fo != fw and not force:
-        print(f"[!] 形态不匹配: 拥有侧 {fo} / 目标侧 {fw}")
-        print("    实测 composite 槽位指向 legacy 声明会导致图案错乱。")
-        print("    整材质换肤要求两侧同形态; 请换一个同形态的入口或目标皮肤,")
+    if not plan:
+        print(f"[!] {owned} 与 {want} 没有可配对的同类材质资源; 见 --list {w}")
+        return False
+    risky = list(blockers)
+    if fo != fw:
+        risky.append(f"形态不同 ({fo} -> {fw}): 只换 vcompmat 入口文档, "
+                     f"目标文档内以绝对路径引用自己的 "
+                     f"{'vmat' if fw == 'legacy' else '节点图'}与贴图")
+    for r in risky:
+        print(f"[!] {r}")
+    if risky and not force:
+        print("    实测跨形态/跨武器都不保证效果 (合成器按目标 UV 展开别人的图案)。")
         print("    确要尝试请加 --force。")
         return False
-    if not plan:
-        print(f"[!] {owned} 与 {want} 没有可配对的同类材质资源; 已中止")
-        return False
+    for x in blockers:
+        print(f"[!] 跨武器风险: {x} —— 图案会按 {w} 的 UV 重新展开, 不是原皮肤的样子")
     for t, s, role in plan:
         te, se = tree[t], tree[s]
         print(f"    [{role:<6}] {t.split(':', 1)[1].split('/')[-1]:<44}"
@@ -425,13 +447,40 @@ def cmd_weapons(tree, wmap):
         print(f"  {w:<14} {len(wmap[w])} 个皮肤")
 
 
+def cmd_family(tree, pat):
+    """按 kit 名正则列出同族皮肤 (如 doppler|sapphire), 标形态/材质大小/是否可整换"""
+    rx = re.compile(pat, re.I)
+    kits = sorted({k.split("/")[-1] for pfx in (VMATS, COMPMAT, GVMAT, GCOMP)
+                   for k in tree if k.startswith(pfx) and rx.search(k)})
+    if not kits:
+        print(f"[!] 没有 kit 名匹配 /{pat}/")
+        return
+    cn, st = cn_names(tree), kit_style(tree)
+    print(f"匹配 /{pat}/ 的 kit ({len(kits)}):")
+    for kit in kits:
+        v, c = VMATS + kit, COMPMAT + kit
+        sz = f"vmat {tree[v][5]}B" if v in tree else ""
+        sz += ("  " if sz and c in tree else "") + (f"vcomp {tree[c][5]}B" if c in tree else "")
+        print(f"  {kit:<34} [{form_of(tree, kit):<9}] style {st.get(kit, ('?',))[0]:<2}"
+              f" {sz:<26} {cn.get(kit, '')}")
+    print("\n用法: --swap <武器> <你拥有的kit> <上面任一kit>   (形态不同时加 --force)")
+
+
 def cmd_list(tree, wmap, w):
-    if w not in wmap:
+    kw = kit_weapon_map(tree)
+    kits = set(wmap.get(w, {}))
+    for k in tree:  # composite kit 没有 vmat, 不在 build_map 里, 但 --swap 可以用
+        if k.startswith(COMPMAT) and w in (kw.get(k.split("/")[-1]) or set()):
+            kits.add(k.split("/")[-1])
+    if not kits:
         print(f"[!] 武器 {w} 无皮肤数据; 可用: {', '.join(sorted(wmap))}")
         return
-    print(f"{w} 可用皮肤 ({len(wmap[w])}):")
-    for kit in sorted(wmap[w]):
-        print(f"  --skin {w} {kit:<34} [{form_of(tree, kit):<9}] {COMMON.get(kit, '')}")
+    cn = cn_names(tree)
+    print(f"{w} 可用皮肤 ({len(kits)}):")
+    for kit in sorted(kits):
+        fm = form_of(tree, kit)
+        tag = "" if kit in wmap.get(w, {}) else "  (composite, 仅 --swap)"
+        print(f"  --skin {w} {kit:<34} [{fm:<9}] {cn.get(kit) or COMMON.get(kit, '')}{tag}")
     print("注: 整材质换肤 (--swap) 要求入口与目标同形态 (legacy/composite)")
 
 
@@ -528,7 +577,13 @@ def main():
     tree = km.load_ref_tree()
     tree_cache = tree
     wmap = build_map(tree)
-    if "--weapons" in args:
+    if "--family" in args:
+        i = args.index("--family")
+        if len(args) < i + 2:
+            print("[!] 用法: --family <kit名正则>   例: --family doppler")
+            sys.exit(1)
+        cmd_family(tree, args[i + 1])
+    elif "--weapons" in args:
         cmd_weapons(tree, wmap)
     elif "--list" in args:
         i = args.index("--list")

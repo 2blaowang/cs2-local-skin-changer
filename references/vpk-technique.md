@@ -195,11 +195,11 @@ CompositeMaterialSystem（蒙版裁剪/磨损/污渍/法线/paintseed 随机全�
 | 角色关系 | **跨角色**（皮肤 → 武器 shader） | **同角色**（皮肤 → 皮肤） |
 | 结果 | shader 不吃，输出 alpha=0 | shader 同名同构，正常渲染 |
 
-### 两种资源形态，互不兼容（决定性约束）
+### 两种资源形态（legacy / composite）
 
 | 形态 | 判据 | 树内资源 | 内容 |
 |---|---|---|---|
-| **legacy** | 有 `vmats/<kit>.vmat` | vmat + vcompmat 两条 | vmat 4.2~4.9KB 完整材质（贴图绝对路径）；vcompmat 1.4~1.7KB，仅一句"转交给该 vmat"的声明（`CONTAINER_SOURCE_TYPE_SPECIFIC_MATERIAL` / `m_strSpecificMaterial`） |
+| **legacy** | 有 `vmats/<kit>.vmat` | vmat + vcompmat 两条 | vmat 4.2~4.9KB 完整材质（贴图绝对路径）；vcompmat 1.4~1.7KB，是 `CCompositeMaterialEditorDoc` 的**单节点图**（一个 `SPECIFIC_MATERIAL` 节点，`m_strSpecificMaterial` 转交给该 vmat） |
 | **composite** | items_game 带 `composite_material_path`，**无 vmat** | 仅 vcompmat 一条 | 5.2~8.1KB 完整合成节点图（`AssemblyProcedure` + 贴图引用 + `MatIncludes` 模板） |
 
 全池 1387 个 kit 的 style × 形态交叉统计：
@@ -211,8 +211,9 @@ CompositeMaterialSystem（蒙版裁剪/磨损/污渍/法线/paintseed 随机全�
 | 1 / 2 | — | 有（如 `soe_bw_the_end_awp` / `hy_varicamo_simple_yellow`） |
 
 **style 不是分界线，资源形态才是**——style 7 里有 45 个 composite，composite 里还有 style 1/2。
-跨形态互换必然图案错乱：composite 槽位被指向 legacy 声明后，合成器拿到的是结构不对的文档。
-`skin_mod.form_of()` 已硬拦，要强上需 `--force`。
+
+形态不一致、跨武器这两类配对，不加 `--force` 时会被 `skin_mod.form_of()` / `swap_targets()` 拦下：
+它们已经不是"同 UV 同角色"的安全组合。但**跨形态并非绝对不可行**，实测见下节。
 
 ### 实测记录
 
@@ -223,10 +224,11 @@ CompositeMaterialSystem（蒙版裁剪/磨损/污渍/法线/paintseed 随机全�
 | `cu_awp_vein` 毛细血管 | `cu_medieval_dragon_awp` 巨龙传说 | legacy→legacy（style 7→7） | ✓ |
 | `hy_red_hex` 变频器 | `cu_m4a1_howling` 咆哮 | legacy→legacy（**style 2→7**） | ✓ |
 | **`am_bronze_sparkle` 青铜装饰** | **`gs_deagle_fennec` 沙漠之狐** | legacy→legacy（**style 5→9**） | ✓ |
-| `m4a4_green_camo` 战鹰 | `cu_m4a1_howling` 咆哮 | **composite→legacy**（style 9→7） | ✗ 模板错乱 |
+| `m4a4_green_camo` 战鹰 | `cu_m4a1_howling` 咆哮 | **composite→legacy**（style 9→7） | ✗ 模板错乱（跨形态，见下节） |
 | `awp_tempered` 镀铬大炮 | `awp_queens_gambit` 后翼弃兵 | composite→composite（style 9→9） | ✓ |
 | `m4a4_green_camo` 战鹰 | `m4a4_falak` 吞天巨蛇 | composite→composite（style 9→9） | ✓ |
 | **`deagle_calligraff` 书法涂鸦** | **`cu_glitter_deagle` 星尘拱廊** | composite→composite（**style 9→7**） | ✓ |
+| `gs_m4a1s_insomnia` 夜无眠 | `cu_m4a1_snake` 冒险家乐园 | legacy→legacy（**style 9→7**） | ✓ 蛇鳞+grunge+磨损 |
 | `sporty_hunter` 大型猎物 | `sporty_purple` 潘多拉之盒（手套） | legacy→legacy | ✓ |
 
 结论：**同形态即互通，与 style 无关、与"皮肤新旧"无关。**
@@ -242,6 +244,31 @@ CompositeMaterialSystem（蒙版裁剪/磨损/污渍/法线/paintseed 随机全�
 | 战鹰 → 咆哮 | **✗** | ✗ | **✗** |
 
 也就是说 style 只有 1、2、3、5、7、9、10 共同出现过在成功样本里，它决定的是**图案在 UV 上的铺法**（hydrographic/阳极/喷绘/枪匠），但材质条目的装载方式与它无关。工具无需收紧到"形态 + style 双匹配"，`form_of()` 单条拦截已经足够。
+
+### 跨形态 / 跨武器（`--force`）★ 后续实测推翻了"跨形态必崩"
+
+关键事实：**legacy 的 vcompmat 不是"空壳声明"，而是 `CCompositeMaterialEditorDoc` 的合法最小图**——
+一个 `SPECIFIC_MATERIAL` 节点把材质转交给 `vmats/<kit>.vmat`。它和 composite 的节点图**同一个文档类、同一个版本号**，
+只是少画了几十个节点。所以把 composite 槽位指向 legacy 文档，喂进合成器的是**合法文档**而不是损坏文档。
+
+第二个前提：**入口永远是 vcompmat 那一条**（`items_game` 的 `composite_material_path` 指向它）。
+文档内部用绝对路径引自己的 vmat 与贴图，因此跨形态时**只改 1 条**，不需要搬 vmat、也不需要搬贴图。
+
+| 实验 | 关系 | 结果 |
+|---|---|---|
+| `m4a4_green_camo` 战鹰 → `cu_m4a1_howling` 咆哮 | composite→legacy，同武器 | ✗ 图案错乱 |
+| `mp9_nexus` 中枢 → `am_doppler_phase2` 多普勒 | **composite→legacy，跨武器（刀→冲锋枪）** | ✓ 粉红大理石，构图完整 |
+| `mp9_nexus` → `am_sapphire_marbleized` 蓝宝石 | 同上 | ✓ 蓝色 |
+| `mp9_nexus` → `am_blackpearl_marbleized` 黑珍珠 | 同上 | ✓ 深底彩光 |
+| `gs_m4a1s_insomnia` 夜无眠 → `cu_m4a1_snake` 冒险家乐园 | legacy→legacy，同武器同形态 | ✓ |
+
+结论：**跨形态不是硬墙，但也不保证**——同样是 composite→legacy，战鹰→咆哮 失败而 中枢→多普勒 成功。
+尚未隔离出根因，两个候选（都未证实）：
+
+1. 目标 legacy 的 style：咆哮是 style 7（hydrographic，图案靠 paintmask 分色），多普勒/宝石是 style 5（阳极，程序化渐变）。composite 槽位没有自己的 paintmask，跑分色逻辑可能取到空图
+2. 跨武器反而更"干净"：中枢本身没有图案可错乱，一切是外来材质整体覆盖
+
+按**逐例实测**处理：文档只记录已验样本，`cmd_swap` 会把风险逐条打印出来再要 `--force`。
 
 ### composite 图谱为什么能整份移植
 
@@ -272,10 +299,32 @@ models/ panorama/ particles/ patches/ stickers/ textures/ weapons/ workshop/
 ### 局限
 
 - 必须**真拥有**该武器上的皮肤（服务端下发 paintindex），否则引擎不进合成流程
-- 只在同一把武器内换（贴图按武器 UV 生成）
-- 一个入口皮肤 = 一个可显示槽位。想同时看多个皮肤，需拥有多个入口（每个入口单独打补丁，互不冲突，`--stack` 叠加）
+- 默认只在同一把武器内换（贴图按武器 UV 生成）。跨武器必须 `--force`：图案按目标武器的 UV 重新展开，能不能看只能实测（刀→枪已验证）
+- 跨形态同样必须 `--force`，且**结果不稳定**（同一组合有成功也有失败样本），只能逐例试
+- 一个入口皮肤 = 一个可显示槽位。想同时看多个皮肤，需拥有多个入口（每个入口单独打补丁，互不冲突，`--stack` 叠加）；同一槽位换第二款是覆盖，不是并列
 - 背包/检视 UI 图标不变（预烘焙 panorama png）
-- 40 个 legacy 皮肤与 117 个 composite 之间仍无法互通——想换老经典（巨龙传说/二西莫夫/野火）需要 legacy 入口；想换新版工作室皮肤需要 composite 入口
+
+## 程序化材质族：多普勒与宝石系（`am_*_marbleized`）
+
+刀具皮肤里有一族公用 `csgo_paint` + `anodized_multi` 的材质，**全部 legacy、style 5**，武器侧共 26 个 kit。
+它们不依赖 paintmask 分色，只有一张程序化底图 + 一组色相参数，所以是"跨武器试探"最好的试验场。
+
+| 族 | kit | 视觉 |
+|---|---|---|
+| 多普勒（原版） | `am_doppler_phase1`~`phase4`，变体 `_widow`×4、`phase2_b` | 四个阶段的 vmat **逐字节只差 355~411 字节**（绝大部分是材质名字符串），挂到枪上几乎同色 |
+| 伽玛多普勒 | `am_gamma_doppler_phase1`~`phase4`，每个另有 `_glock` 版 | 与多普勒差 2808 字节，绿系 |
+| 宝石系 | `am_sapphire_marbleized`(蓝) `_b`、`am_ruby_marbleized`(红)、`am_emerald_marbleized`(绿) `_glock`、`am_blackpearl_marbleized`(黑) `_b` | 彼此差 2500~2700 字节，颜色烘死在参数里 |
+| 渐变大理石 | `am_marble_fade` `_widow` | 同 shader 家族，但严格说不属多普勒 |
+
+**换阶段编号不会变色**：刀上的"第几阶段"色相来自 paintseed 落在哪个区间（服务端物品数据），四个阶段的材质本身同构。
+想要确定的颜色只能走宝石系——`sapphire` 蓝、`ruby` 红、`emerald` 绿、`blackpearl` 黑。
+
+`blackpearl` 的底图是 `anodized_multi/smoke_psd_779d5513`（多普勒/蓝绿宝石用 `smoke2_psd_cdf5ba83`），
+纹路更细，同一套 shader 下彩光最强、整体最暗。
+
+`_glock` / `_widow` 后缀是按特定武器 UV 调过构图密度的变体，换到别的枪上可以对比着看，但同样不保证对位。
+
+随时用 `--family <正则>` 查同族（`--family doppler`、`--family "sapphire|ruby"`、`--family emerald` 会连手套的 `specialist_emerald_web` 一起列出）。
 
 ## 手套整换材质（--glove）
 
