@@ -84,7 +84,10 @@
 
 可用路线只有一条：**pak01_dir.vpk 树条目重指向**（本 skill 方案）。GitHub/Gitee 上的"编译好 VPK mod"同样过不了签名链，拿来挂载没有意义。
 
-## 武器皮肤本地替换（paint kit 贴图重指向，已验证）
+## 武器皮肤本地替换 · 贴图模式（`--tex`，默认武器的降级方案）
+
+> **适用范围**：手上一把皮肤都没有、只能改默认武器时用这条路。效果上限是"图案平铺全枪"。
+> 若你**拥有**该武器上任意皮肤，请直接看后面的「整材质换肤」——那是官方级效果且改动更少。
 
 换肤与换刀同源：CS2 皮肤映射虽在服务端（items_game.txt 已移除明文），但**全部皮肤渲染资产都在本地 pak01**。把武器默认涂装贴图的树条目重指向皮肤贴图数据即可，`skin_mod.py` 已实现。
 
@@ -168,9 +171,120 @@ python skin_mod.py --audit                    # 审计
 
 **4. 对本地换肤的边界定论**：
 - 皮肤贴图分两类是合成管线的直接后果：`tga` 单层满铺成品（可完整平铺）/ `psd` 合成输入元素（图案层，底色靠蒙版+变异器烘焙补全，绕过管线必不完整）
-- 官方级效果 = 必须让引擎跑合成管线 = 由服务端物品数据驱动（默认武器无皮肤 kit 条目），本地伪造物品数据超出文件修改范畴且触碰 Steam 网络校验——**此路不通，贴图重指向（tga 满铺）已是本地方案的实用上限**
+- ~~官方级效果必须让引擎跑合成管线，本地伪造物品数据此路不通~~ ——**此结论已被推翻，见下节「整材质换肤」**：伪造物品数据确实不可行，但如果你**真拥有**该武器上的任意皮肤，服务端已下发 paintindex，引擎本来就会跑完整管线；此时只把"已拥有皮肤"的材质条目重指向"想显示皮肤"，即得官方级效果（蒙版/磨损/paintseed 全部保留）
 - 引擎含调试命令痕迹 `set item texture seed`（工具模式用，游戏内不可用）
 - 想预览某皮肤官方效果：直接看树内 `panorama/images/econ/default_generated/weapon_<武器>_<kit>_heavy_png`（烘焙成品预览图）
+
+## 整材质换肤（拥有皮肤 → 引擎跑完整合成管线）★ 最终方案
+
+上一节"此路不通"的前提是**默认武器没有皮肤 kit**。只要你真拥有该武器上的任意皮肤，
+服务端就下发 paintindex，客户端按 kit 名找到材质资源，引擎照常跑
+CompositeMaterialSystem（蒙版裁剪/磨损/污渍/法线/paintseed 随机全部生效）。
+我们只把**已拥有皮肤的材质条目**重指向**想显示皮肤的材质条目**——配方换了，管线一行没动。
+
+查找链：`paintindex` → kit 名 → 材质资源条目 →（vmat 或 vcompmat）→ 贴图绝对路径
+
+因此整份换肤只需重指向 **1~2 个**树条目，比贴图模式少一个数量级，效果却是官方级。
+
+### v1 全透明与本次成功的根本区别
+
+| | v1 整 vmat 重指向（武器全透明） | 整材质换肤（成功） |
+|---|---|---|
+| 目标条目 | 武器渲染材质 `weapon_*` | 皮肤材质 kit 自身 |
+| 源数据 | 皮肤 vmat（合成管线中间产物） | 皮肤 vmat / vcompmat |
+| 角色关系 | **跨角色**（皮肤 → 武器 shader） | **同角色**（皮肤 → 皮肤） |
+| 结果 | shader 不吃，输出 alpha=0 | shader 同名同构，正常渲染 |
+
+### 两种资源形态，互不兼容（决定性约束）
+
+| 形态 | 判据 | 树内资源 | 内容 |
+|---|---|---|---|
+| **legacy** | 有 `vmats/<kit>.vmat` | vmat + vcompmat 两条 | vmat 4.2~4.9KB 完整材质（贴图绝对路径）；vcompmat 1.4~1.7KB，仅一句"转交给该 vmat"的声明（`CONTAINER_SOURCE_TYPE_SPECIFIC_MATERIAL` / `m_strSpecificMaterial`） |
+| **composite** | items_game 带 `composite_material_path`，**无 vmat** | 仅 vcompmat 一条 | 5.2~8.1KB 完整合成节点图（`AssemblyProcedure` + 贴图引用 + `MatIncludes` 模板） |
+
+全池 1387 个 kit 的 style × 形态交叉统计：
+
+| style | legacy | composite |
+|---|---|---|
+| 7 | 343 | 45 |
+| 9 | 187 | 117 |
+| 1 / 2 | — | 有（如 `soe_bw_the_end_awp` / `hy_varicamo_simple_yellow`） |
+
+**style 不是分界线，资源形态才是**——style 7 里有 45 个 composite，composite 里还有 style 1/2。
+跨形态互换必然图案错乱：composite 槽位被指向 legacy 声明后，合成器拿到的是结构不对的文档。
+`skin_mod.form_of()` 已硬拦，要强上需 `--force`。
+
+### 实测记录
+
+| 入口（拥有） | 目标（显示） | 形态 | 结果 |
+|---|---|---|---|
+| `cu_ak47_mastery` 精英之作 | `cu_fireserpent_ak47_bravo` 火蛇 | legacy→legacy | ✓ 蛇纹+底色+磨损，构图正确，与官方检视一致 |
+| `cu_ak47_mastery` | `cu_ak_island_floral` 野荷 | legacy→legacy | ✓ |
+| `cu_awp_vein` 毛细血管 | `cu_medieval_dragon_awp` 巨龙传说 | legacy→legacy | ✓ |
+| `hy_red_hex` 变频器 | `cu_m4a1_howling` 咆哮 | legacy→legacy（style 2→7） | 未反馈 |
+| `m4a4_green_camo` 战鹰 | `cu_m4a1_howling` 咆哮 | **composite→legacy** | ✗ 模板错乱 |
+| `awp_tempered` 镀铬大炮 | `awp_queens_gambit` 后翼弃兵 | composite→composite | ✓ |
+| `m4a4_green_camo` 战鹰 | `m4a4_falak` 吞天巨蛇 | composite→composite | ✓ |
+| `sporty_hunter` 大型猎物 | `sporty_purple` 潘多拉之盒（手套） | legacy→legacy | ✓ |
+
+结论：**同形态即互通**，与 style、与"皮肤新旧"都无关。
+
+### composite 图谱为什么能整份移植
+
+- 图谱内所有引用都是**绝对路径**（`items/assets/paintkits/<系列>/<kit>_albedo_texture_*.vtex` 等），自带完整 5 张 PBR 图（albedo / normal / roughness / AO / material_mask，最大单张法线 13MB）
+- 两份不同 kit 的图谱**逐字节级同构**：尾部节点字节几乎完全相同，只有数值参数与贴图路径不同
+- `Identifier` 字段只是节点 KV3 键名，不绑定 kit 名，不会被校验
+- 这类皮肤由画师交付成品图，没有 paintseed 程序化铺贴，因此**不存在**贴图模式那种"图案平铺、构图散掉"问题，效果天生与官方一致
+- 目录不按 kit 名走：`weapons/paints/community/community_NN/<kit>`（按收藏品编号）与 `weapons/paints/set_arabesque/<kit>`（按系列）混用（吞天巨蛇与无上之焰同属 `set_arabesque`），配对必须按 kit 名末端匹配，不能用固定前缀
+
+### 局限
+
+- 必须**真拥有**该武器上的皮肤（服务端下发 paintindex），否则引擎不进合成流程
+- 只在同一把武器内换（贴图按武器 UV 生成）
+- 一个入口皮肤 = 一个可显示槽位。想同时看多个皮肤，需拥有多个入口（每个入口单独打补丁，互不冲突，`--stack` 叠加）
+- 背包/检视 UI 图标不变（预烘焙 panorama png）
+- 40 个 legacy 皮肤与 117 个 composite 之间仍无法互通——想换老经典（巨龙传说/二西莫夫/野火）需要 legacy 入口；想换新版工作室皮肤需要 composite 入口
+
+## 手套整换材质（--glove）
+
+手套是独立体系（`gloves/paints/`），但资源形态比武器**更规整**：
+
+- **72 个 kit / 7 家族**：bloodhound 8、brokenfang 4、handwrap 12、motorcycle 12、slick 12、specialist 12、sporty 12
+- **全部 legacy 形态**：每 kit 恒定 2 条（`vmat_c:gloves/paints/<kit>` 约 7.8KB + `vcompmat_c:gloves/paints/<kit>` 约 1.6KB 声明），**没有 composite 变体** → 不存在武器那条形态陷阱
+- 家族从 vmat 内引用的 `characters/models/shared/arms/glove_<family>/` 路径解析
+- **同家族 UV 同源**：实测大型猎物与潘多拉之盒的 AO（`eb5235b4`）与法线（`78a7ad1a`）**指向同一张贴图**，只有 mask 不同（`3685129a` vs `953141db`）
+- **跨家族不行**：kit 自带的 mask/normal 按该家族手部 UV 绘制，而模型仍是本家族的 → 花纹错位。要跨家族必须连 `glove_<family>` 模型一起换（未验证，且会连带影响库存里所有同家族手套）
+- 手套 kit 的 `vmt_path` 字段写作 `materials/models/weapons/customization/paints_gloves/<kit>.vmat`，但树内实存条目是 `gloves/paints/<kit>`，**两者不一致**，实际可操作的是后者
+
+### 命名陷阱（手套 kit 名与中文名完全不对应）
+
+| 中文名 | kit |
+|---|---|
+| 潘多拉之盒 | `sporty_purple`（**不是** `sporty_pandoras_box`） |
+| 树篱迷宫 | `sporty_green` |
+| 双栖 | `sporty_poison_frog_blue_white` |
+| 大型猎物 | `sporty_hunter` |
+| 超导体 | `sporty_light_blue` |
+| 迈阿密风云 | `sporty_blue_pink` |
+
+中文名必须查 `resource/csgo_schinese` 的 `PaintKit_<kit>_tag`（`skin_mod.cn_names()` 已内化，武器与手套共用），不能按字面猜。
+
+### 数据里的废弃条目
+
+- `am_tiger_silver`、`cu_whiteout_awp`、`hy_varicamo_red_awp`：只在 panorama 检视图里残留图标，`items_game` 无定义、树内无材质 → 永远加载不到，不可作为目标
+- `awp_ice_coaled`：`description_string` 被错误指向 `#PaintKit_cu_ak47_cogthings`（Valve 数据 bug），游戏中显示名是错的
+- `sporty_jaguar`：`items_game` 有完整定义（带 vmt_path），但树内无任何资源
+
+### 命令
+
+```
+python scripts/skin_mod.py --gloves                        # 72 个手套皮肤按家族分组列出
+python scripts/skin_mod.py --glove sporty_hunter sporty_purple --stack   # 大型猎物 → 潘多拉之盒
+python scripts/skin_mod.py --swap ak47 cu_ak47_mastery cu_ak_island_floral --stack
+python scripts/skin_mod.py --list m4a4                     # 带 [legacy]/[composite] 标记
+python scripts/skin_mod.py --revert                        # 一步还原（刀 + 皮肤 + 手套）
+python scripts/skin_mod.py --audit                         # 审计
+```
 
 
 
