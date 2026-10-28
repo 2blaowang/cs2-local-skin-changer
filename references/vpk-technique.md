@@ -113,6 +113,10 @@ v2 机制：引擎按路径加载 `ak47_default_color_psd_*` 时拿到的是血�
 ### 已知局限（v2 贴图模式）
 
 - 图案**平铺全枪**：没有 paintmask 蒙版控制分布，与官方皮肤的分色效果不同（血竞的白底红纹变成整枪图案平铺）
+- **皮肤分两类，效果天差地别**：
+  - `tga` 单层满铺成品图（如血竞 3.8MB）→ 图案完整 ✓
+  - `psd` 图案元素层（如火蛇/咆哮）→ 只有局部贴片，底色靠引擎合成补 → 直接平铺必然不完整 ✗
+  - 全池统计：tga 542 个 / psd 491 个；`tex_targets` 已做智能选源（tga 优先 + 大图优先）
 - 磨损/质感不变：metalness/roughness/normal 仍是默认涂装
 - 检视 UI 大图不变（panorama png，可另行重指向对应皮肤 png）
 - 纯视觉：客户端本地渲染层，与服务端库存无交互
@@ -123,11 +127,51 @@ v2 机制：引擎按路径加载 `ak47_default_color_psd_*` 时拿到的是血�
 python skin_mod.py --weapons                  # 列出可换肤武器 (36)
 python skin_mod.py --list ak47                # 列出该武器皮肤 (AK47 有 45)
 python skin_mod.py --skin ak47 gs_ak47_bloodsport --tex   # 血竞 (贴图模式)
-python skin_mod.py --revert                   # 还原
+python skin_mod.py --skin m4a4 am_kimono_sunrise --tex --stack   # 叠加第二把
+python skin_mod.py --revert                   # 还原全部
 python skin_mod.py --audit                    # 审计
 ```
 
-与 knife_mod 共用同一份 pak01_dir.vpk 与原始备份，补丁均从备份出发互不叠加；`--revert` 同时还原刀和皮肤。
+- `--stack`：叠加到当前补丁之上（多武器同时换装）。带大小保护：当前文件与备份大小不符（被 Steam 还原过）时拒绝执行
+- 不带 `--stack` 时从原始备份重建（覆盖此前所有补丁）
+- M4A4 特例已修复：panorama 检视图里 M4A4 叫 `m4a1`（老内部名），检视材质目录为 `rif_m4a1`（消音版 `rif_m4a1_s` 专属，不可混用），由 ALIAS / VIEW_ALIAS 表处理
+- `batch_random.py`：批量随机换装（只从 tga 满铺成品图池挑选，效果完整）
+
+与 knife_mod 共用同一份 pak01_dir.vpk 与原始备份；不带 `--stack` 的补丁从备份重建（互不叠加），`--revert` 同时还原刀和皮肤。
+
+## 刀皮肤本地替换（实验：效果有限）
+
+刀与枪同源尝试，结论：
+
+| 方案 | 结果 |
+|---|---|
+| 整 vmat 重指向（刀身材质 → 皮肤 vmat 如 am_marble_fade） | **刀完全透明**——与枪 v1 同根因，F_PAINT_STYLE shader 是合成管线中间材质，喂任何模型都 alpha=0 |
+| 贴图模式（karam_color → 共享图案贴图） | 可见但不完整。水转印图集=涂鸦花块；大马士革钢纹=全刀统一花纹；fade 渐变=重复色带（小模板平铺感） |
+
+刀皮肤无预烘焙成品图可用：panorama 检视图是 3D 渲染预览而非 UV 图；皮肤图案全是共享小图（fade 67KB / 大理石纹 264KB / 大马士革 843KB），供引擎按刀 composite_inputs（pos 位置贴图 3.3MB + masks）运行时合成。**刀换肤实用上限 = 纹理平铺，效果远逊枪的 tga 满铺皮肤。**
+
+## 引擎皮肤系统逆向（client.dll，paintseed 机制）
+
+对 `game/csgo/bin/win64/client.dll` (37MB) 的字符串符号逆向，皮肤应用全链路：
+
+**1. 物品数据（服务端 GC 下发）**：`CEconItemPreviewDataBlock` 字段 `paintindex`（皮肤ID）/ `paintwear`（磨损 0~1）/ `paintseed`（图案种子）——即"皮肤种子"，纯服务端数据。
+
+**2. 合成管线 CompositeMaterialSystem**：每皮肤一个 `CCompositeMaterialKit`，含装配程序列表 `m_vecCompositeMaterialAssemblyProcedures`，每个程序三段式：
+- `MatchFilters`：匹配哪些模型/部位
+- `CompositeInputContainers`：合成输入（pos 位置贴图 + masks 蒙版，即树内 `composite_inputs` vmat）
+- `PropertyMutators`（属性变异器，`m_nMutatorCommandType` 枚举）：
+  - `RandomRollInputVars`：`SeedInputVar`=paintseed → `InputVarsToRoll`（pattern_offset_x/y、pattern_rotate）在数据定义的 start~end 区间掷随机值
+  - `GenerateTexture`：生成贴图写入目标参数；另有 CopyProperty / 条件变异 / DrawText（贴名）等
+- 多 pass 渲染到 Render Target 烘焙成品贴图再绑定武器材质；`materials/dev/compositematerials_prewarm/custom_weapon_prewarm.vmat` 预热常用皮肤
+
+**3. paintseed 的本质**：种子 → 掷 pattern_offset_x/y + pattern_rotate → 同皮肤不同种子图案位置不同。这就是官方皮肤"分色/图案位置随机"的来源。
+
+**4. 对本地换肤的边界定论**：
+- 皮肤贴图分两类是合成管线的直接后果：`tga` 单层满铺成品（可完整平铺）/ `psd` 合成输入元素（图案层，底色靠蒙版+变异器烘焙补全，绕过管线必不完整）
+- 官方级效果 = 必须让引擎跑合成管线 = 由服务端物品数据驱动（默认武器无皮肤 kit 条目），本地伪造物品数据超出文件修改范畴且触碰 Steam 网络校验——**此路不通，贴图重指向（tga 满铺）已是本地方案的实用上限**
+- 引擎含调试命令痕迹 `set item texture seed`（工具模式用，游戏内不可用）
+- 想预览某皮肤官方效果：直接看树内 `panorama/images/econ/default_generated/weapon_<武器>_<kit>_heavy_png`（烘焙成品预览图）
+
 
 
 

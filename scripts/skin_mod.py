@@ -29,6 +29,8 @@ RE_BASE = re.compile(r"^vmat_c:weapons/models/([^/]+)/materials/weapon_[^/]+$")
 RE_VIEW = re.compile(r"^vmat_c:materials/models/weapons/v_models/([^/]+)/[^/]+$")
 RE_PNG = re.compile(r"^vtex_c:panorama/images/econ/default_generated/weapon_(.+?)_(heavy|light|medium)_png$")
 VMATS = "vmat_c:materials/models/weapons/customization/paints/vmats/"
+ALIAS = {"m4a1": "m4a4"}  # panorama 武器名 -> 树内武器目录名 (M4A4 在 UI 层叫 m4a1)
+VIEW_ALIAS = {"m4a4": ["rif_m4a1"], "m4a1_silencer": ["rif_m4a1_s"]}  # 检视目录名精确例外 (rif_m4a1=M4A4, rif_m4a1_s=消音版)
 EXCLUDE = ("lens", "chargemeter", "digits", "sticker")  # 非主体材质不换
 COMMON = {  # 常见皮肤中文备注 (缺省显示 kit 名)
     "gs_ak47_bloodsport": "血竞", "cu_ak47_asiimov": "二西莫夫",
@@ -47,28 +49,35 @@ def weapon_dirs(tree):
 
 
 def build_map(tree):
-    """{武器名: {皮肤kit名: 皮肤vmat条目key}}, 以 panorama 检视图解析 武器×皮肤"""
+    """{武器目录名: {皮肤kit名: 皮肤vmat条目key}}, 以 panorama 检视图解析 武器×皮肤"""
     dirs = weapon_dirs(tree)
+    names = dirs | set(ALIAS)  # UI 层武器名可能是目录名的别名
     out = {}
     for k in tree:
         m = RE_PNG.match(k)
         if not m:
             continue
         rest = m.group(1)
-        best = None
-        for w in dirs:
-            if rest.startswith(w + "_") and (best is None or len(w) > len(best)):
-                best = w
-        if best and (kit := rest[len(best) + 1:]) and VMATS + kit in tree:
-            out.setdefault(best, {})[kit] = VMATS + kit
+        ui = None
+        for w in names:  # 最长前缀匹配 UI 武器名
+            if rest.startswith(w + "_") and (ui is None or len(w) > len(ui)):
+                ui = w
+        if not ui:
+            continue
+        w = ALIAS.get(ui, ui)  # 别名归一到目录名; kit 按 UI 名长度切分
+        kit = rest[len(ui) + 1:]
+        if kit and VMATS + kit in tree:
+            out.setdefault(w, {})[kit] = VMATS + kit
     return out
 
 
 def targets_for(tree, w):
-    """武器 w 的基础材质 + 检视材质条目 (排除配件)"""
+    """武器 w 的基础材质 + 检视材质条目 (排除配件; 检视目录精确匹配 + 别名例外表)"""
+    va = VIEW_ALIAS.get(w, [])
     ts = [k for k in tree if (m := RE_BASE.match(k)) and m.group(1) == w
           and not any(x in k for x in EXCLUDE)]
-    ts += [k for k in tree if (m := RE_VIEW.match(k)) and w in m.group(1)
+    ts += [k for k in tree if (m := RE_VIEW.match(k))
+           and (m.group(1) == w or m.group(1).endswith("_" + w) or m.group(1) in va)
            and not any(x in k for x in EXCLUDE)]
     return sorted(set(ts))
 
@@ -97,6 +106,14 @@ def tex_targets(tree, wmap, w, kit):
                  and "/shared/" not in t and "vmat_g" not in t]
     if not skin_texs:
         return None, []
+    # 智能选源: tga(单层满铺成品图)优先于 psd(图案元素层, 需引擎合成才有完整效果),
+    # 同类型按文件大小降序 (大图 = 满铺成品概率高)
+    def _src_rank(t):
+        key = f"vtex_c:{t}"
+        if key not in tree:
+            return (2, 0)
+        return (0 if "_tga_" in t else 1, -tree[key][5])
+    skin_texs.sort(key=_src_rank)
     src_tex = f"vtex_c:{skin_texs[0]}"
     tgts = []
     for v in vmats:  # 每个材质里的 <武器>_color 贴图 (引擎共享 default_* 除外)
@@ -121,14 +138,13 @@ def cmd_list(tree, wmap, w):
         print(f"  --skin {w} {kit:<32} {COMMON.get(kit, '')}")
 
 
-def cmd_apply(tree, wmap, w, kit, tex=False):
+def cmd_apply(tree, wmap, w, kit, tex=False, stack=False):
     if w not in wmap or kit not in wmap[w]:
         print(f"[!] 未知组合 {w} + {kit}; 见 --list {w}")
         return False
     if tex:
         # v2 贴图模式: 保持武器原生 vmat/shader, 只换 color 贴图数据
         # (v1 整 vmat 重指向实测武器全透明: 皮肤 vmat 走合成管线 shader, 不适配武器渲染)
-        src_key, tgts = None, []
         src_tex, tgt_texs = tex_targets(tree, wmap, w, kit)
         if not tgt_texs:
             print(f"[!] 未找到 {w} 的默认 color 贴图条目")
@@ -144,11 +160,18 @@ def cmd_apply(tree, wmap, w, kit, tex=False):
             print(f"[!] 未找到 {w} 的目标材质条目")
             return False
     src = entries[src_key]
-    print(f"[*] {w} -> {kit} ({COMMON.get(kit, '皮肤')}){' [贴图模式]' if tex else ''}")
+    print(f"[*] {w} -> {kit} ({COMMON.get(kit, '皮肤')}){' [贴图模式]' if tex else ''}{' [叠加]' if stack else ''}")
     for t in tgts:
         print(f"    重指向: {t}  (pack {entries[t][3]:03d} -> {src[3]:03d}, {entries[t][5]}B -> {src[5]}B)")
-    orig = open(km.BAK_DIR, "rb").read()
-    cur = bytearray(orig)
+    bak = open(km.BAK_DIR, "rb").read()
+    if stack:
+        base = km.read_dir()
+        if len(base) != len(bak):
+            print("[!] 当前文件大小与备份不符 (可能被 Steam 还原过), 拒绝叠加; 请先单独应用")
+            return False
+    else:
+        base = bak
+    cur = bytearray(base)
     for t in tgts:
         struct.pack_into("<IHHII", cur, entries[t][0], src[1], 0, src[3], src[4], src[5])
     data = bytes(cur)
@@ -236,7 +259,7 @@ def main():
             print("[!] 用法: --skin <武器> <皮肤kit>  例: --skin ak47 gs_ak47_bloodsport")
             sys.exit(1)
         w, kit = args[i + 1], args[i + 2]
-        if cmd_apply(tree, wmap, w, kit, tex="--tex" in args):
+        if cmd_apply(tree, wmap, w, kit, tex="--tex" in args, stack="--stack" in args):
             sys.exit(0 if cmd_audit(tree) else 1)
         sys.exit(1)
     else:

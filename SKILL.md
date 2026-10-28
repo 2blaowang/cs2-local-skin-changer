@@ -36,14 +36,18 @@ python scripts/knife_mod.py --audit           # 审计当前状态（可带刀�
 python scripts/skin_mod.py --weapons                        # 列出可换肤武器 (36)
 python scripts/skin_mod.py --list ak47                      # 列出该武器可用皮肤
 python scripts/skin_mod.py --skin ak47 gs_ak47_bloodsport --tex   # 换血竞 (必须带 --tex)
+python scripts/skin_mod.py --skin m4a4 am_kimono_sunrise --tex --stack   # 叠加第二把
 python scripts/skin_mod.py --revert                         # 还原（与换刀共用备份）
 python scripts/skin_mod.py --audit                          # 审计
 ```
 
 - 皮肤发现：解析树内 6264 个 panorama 检视图文件名反推 武器×皮肤 映射；皮肤贴图按武器 UV 生成，**只能换本武器的皮肤**
 - **必须用 --tex 贴图模式**：只把武器默认 `_color` 贴图条目重指向皮肤主贴图数据，保持武器原生 vmat/shader。整 vmat 重指向实测武器全透明（皮肤 vmat 走合成管线 shader，直接渲染输出 alpha=0）
+- `--stack`：叠加补丁（多武器同时换装），带大小保护（文件被 Steam 还原则拒绝）；不带时从原始备份重建，覆盖此前补丁
+- **选皮规则（重要）**：`tga` 单层满铺成品图皮肤（血竞/皇后/破晓/二西莫夫等大图）图案完整；`psd` 图案元素层皮肤（火蛇/咆哮等）只是合成管线输入元素，直接平铺必然不完整。`tex_targets` 已内置智能选源（tga 优先+大图优先），批量脚本 `batch_random.py` 只从满铺池挑选
 - 效果：皮肤图案平铺全枪（无 paintmask 蒙版分色），质感/磨损保持默认涂装；UI 检视大图不变
-- 换肤/换刀补丁互不叠加（均从 .bak_v6 原始备份出发），最后一次应用的补丁即当前状态
+- M4A4 特例已处理：panorama 里叫 `m4a1`、检视材质目录 `rif_m4a1`（消音版 `rif_m4a1_s` 专属），由 ALIAS/VIEW_ALIAS 表自动映射
+- 刀皮肤：整 vmat 重指向刀全透明；贴图模式只能平铺共享小图案（fade/大马士革/大理石纹），无预烘焙成品图，效果有限
 
 ## 关键机制
 
