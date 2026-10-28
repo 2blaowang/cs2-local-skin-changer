@@ -84,6 +84,53 @@
 
 可用路线只有一条：**pak01_dir.vpk 树条目重指向**（本 skill 方案）。GitHub/Gitee 上的"编译好 VPK mod"同样过不了签名链，拿来挂载没有意义。
 
+## 武器皮肤本地替换（paint kit 贴图重指向，已验证）
+
+换肤与换刀同源：CS2 皮肤映射虽在服务端（items_game.txt 已移除明文），但**全部皮肤渲染资产都在本地 pak01**。把武器默认涂装贴图的树条目重指向皮肤贴图数据即可，`skin_mod.py` 已实现。
+
+### 皮肤资产结构（树内路径）
+
+| 资产 | 路径模式 | 说明 |
+|---|---|---|
+| 皮肤材质 | `vmat_c:materials/models/weapons/customization/paints/vmats/<kit>` | 每皮肤一个，约 4.5-5KB，preload=0，全在 pak01_501 |
+| 皮肤贴图 | `…/paints/custom/workshop/<名>_tga_<hash>`、`…/paints/gunsmith/workshop/…`、`items/assets/paintkits/…` | vmat 内按路径引用，无需单独重指向 |
+| 武器基础材质 | `vmat_c:weapons/models/<武器目录>/materials/weapon_*` | 36 个武器统一模式，vmdl 按路径引用 |
+| 第一人称检视材质 | `vmat_c:materials/models/weapons/v_models/<目录>/<名>` | 与世界模型材质平行，需一并替换 |
+| UI 检视图 | `panorama/images/econ/default_generated/weapon_<武器>_<kit>_<heavy\|light\|medium>_png` | 6264 个，可反推完整 武器×皮肤 映射表（skin_mod 用它自动发现皮肤） |
+| legacy 复合材质 | `vcompmat_c:weapons/paints/legacy/<kit>` | 皮肤合成文档，引用 vmats |
+
+皮肤命名前缀 = 合成类型：cu_/gs_/am_/aa_/hy_/sp_/aq_。**皮肤贴图按武器 UV 生成，只能用于对应武器**（AK 的贴图贴不上 AWP）。
+
+### 实验记录（AK47 → 血竞）
+
+| 版本 | 做法 | 结果 |
+|---|---|---|
+| v1 整 vmat 重指向 | 武器基础材质+检视材质条目 → 皮肤 vmat 数据 | **武器完全透明**（不崩溃、无黑紫）。根因：皮肤 vmat 走运行时合成管线专用 shader（F_PAINT_STYLE 等参数），直接喂给武器渲染输出 alpha=0 |
+| v2 贴图级重指向 ✓ | 保持武器原生 vmat/shader 不动，把 `_color` 贴图条目 → 皮肤主贴图条目数据 | **成功**：血竞图案完整铺上枪身，世界模型+第一人称都生效，不透明不崩溃 |
+
+v2 机制：引擎按路径加载 `ak47_default_color_psd_*` 时拿到的是血竞贴图数据；shader 未变所以不透明。皮肤贴图是按武器 UV1 的图案层，直接替换即整体上色。
+
+### 已知局限（v2 贴图模式）
+
+- 图案**平铺全枪**：没有 paintmask 蒙版控制分布，与官方皮肤的分色效果不同（血竞的白底红纹变成整枪图案平铺）
+- 磨损/质感不变：metalness/roughness/normal 仍是默认涂装
+- 检视 UI 大图不变（panorama png，可另行重指向对应皮肤 png）
+- 纯视觉：客户端本地渲染层，与服务端库存无交互
+
+### skin_mod.py 用法
+
+```
+python skin_mod.py --weapons                  # 列出可换肤武器 (36)
+python skin_mod.py --list ak47                # 列出该武器皮肤 (AK47 有 45)
+python skin_mod.py --skin ak47 gs_ak47_bloodsport --tex   # 血竞 (贴图模式)
+python skin_mod.py --revert                   # 还原
+python skin_mod.py --audit                    # 审计
+```
+
+与 knife_mod 共用同一份 pak01_dir.vpk 与原始备份，补丁均从备份出发互不叠加；`--revert` 同时还原刀和皮肤。
+
+
+
 ## 风险边界
 
 - 引擎完整性检查（哈希自洽）可绕过 ≠ VAC 不检测；VAC 逻辑不公开、封禁延迟执行，无法经验性证伪

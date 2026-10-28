@@ -1,21 +1,32 @@
-# CS2 默认刀本地替换工具
+# CS2 本地视觉替换工具（换刀 + 换肤）
 
-把 CS2 的默认刀（T/CT 双阵营）本地替换为任意 19 种原生刀型（蝴蝶刀、爪子刀、M9 刺刀等，原色外观）。纯本地视觉修改，无网络行为，不分发任何游戏资产。
+两个功能，同一套 VPK 树条目重指向技术：
+
+1. **换刀**：把默认刀（T/CT 双阵营）本地替换为任意 19 种原生刀型（蝴蝶刀、爪子刀、M9 刺刀等，原色外观）
+2. **换肤**：把 36 种武器的默认涂装本地替换为任意原生皮肤（paint kit 贴图级重指向，图案平铺效果）
+
+纯本地视觉修改，无网络行为，不分发任何游戏资产。
 
 - 一条命令切换 / 一键回滚 / 全量审计自检
-- 只重写 VPK 目录树里的 4 个指针条目：不碰 pak 数据包、不碰哈希数组、文件大小不变
-- 检视动画一并切换（含 CT 方正反握修复），进游戏即生效
+- 只重写 VPK 目录树条目指针：不碰 pak 数据包、不碰哈希数组、文件大小不变
+- 换刀含检视动画切换（含 CT 方正反握修复），换肤世界模型+第一人称同时生效
 
 ## 快速上手
 
 需要 Python 3.8+（推荐安装 `blake3` 包以启用全窗口校验）。
 
 ```powershell
+# 换刀
 python scripts/knife_mod.py --init              # 首次使用：自动探测游戏路径 + 建原始备份
 python scripts/knife_mod.py --list              # 列出 19 种可用刀型
 python scripts/knife_mod.py --knife karambit    # 换成爪子刀（自动审计）
-python scripts/knife_mod.py --knife butterfly   # 换成蝴蝶刀
 python scripts/knife_mod.py --revert            # 还原默认刀
+
+# 换肤（首次使用共用 knife_mod --init 建的备份）
+python scripts/skin_mod.py --weapons                       # 列出可换肤武器 (36)
+python scripts/skin_mod.py --list ak47                     # 列出 AK47 可用皮肤
+python scripts/skin_mod.py --skin ak47 gs_ak47_bloodsport --tex   # AK47 换血竞（必须带 --tex）
+
 python scripts/knife_mod.py --audit             # 审计当前状态
 ```
 
@@ -30,7 +41,7 @@ python scripts/knife_mod.py --init --csgo "D:\Steam\steamapps\common\Counter-Str
 - **修改后的文件不要带入 VAC 官方对局**，进官方局前先 `--revert`（1 秒）。离线/社区服随意
 - Steam「验证完整性」会把 `pak01_dir.vpk` 还原成官方原版，重跑 `--knife` 即可恢复，`.bak_v6` 备份不受影响
 - 引擎哈希校验可以保持自洽 ≠ VAC 一定不检测。VAC 逻辑不公开，封禁延迟执行，无法经验性证伪
-- 本工具只改模型与检视动画（原色）。皮肤涂装属于服务端物品系统，本地文件无法修改
+- 本工具只做本地渲染层替换：换肤图案为平铺效果（无官方蒙版分色），磨损质感保持默认涂装；库存/稀有度等服务端数据不受影响
 
 ## 为什么不能用自制/外置 VPK？
 
@@ -56,7 +67,8 @@ python scripts/knife_mod.py --init --csgo "D:\Steam\steamapps\common\Counter-Str
 ├── README.md                     # 本文件
 ├── SKILL.md                      # AI Agent 技能入口（ Trae/Claude 等 skill 规范）
 ├── scripts/
-│   ├── knife_mod.py              # 主工具（切换/审计/回滚/init）
+│   ├── knife_mod.py              # 换刀主工具（切换/审计/回滚/init）
+│   ├── skin_mod.py               # 换肤工具（paint kit 贴图重指向，36 武器 × 原生皮肤）
 │   └── scan_workshop.py          # 创意工坊资产侦察（扫描订阅地图 VPK 模型清单）
 └── references/
     └── vpk-technique.md          # VPK 格式、引擎校验机制、踩坑记录与逆向结论
