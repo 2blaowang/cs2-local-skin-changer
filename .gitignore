@@ -14,3 +14,6 @@ patches.json
 .vscode/
 .idea/
 __pycache__/
+
+# GUI 运行时缓存: VRF 导出器二进制 + 贴图缩略图, 都是本机可再生的大文件
+.cache/

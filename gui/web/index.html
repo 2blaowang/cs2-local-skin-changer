@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>CS2 本地皮肤控制台 · 原型</title>
+<style>
+  :root{
+    --bg:#15171c; --panel:#1a1d23; --line:#272c35; --line2:#333a46;
+    --fg:#d9dde5; --dim:#7d8595; --accent:#2f6ee0; --warn:#f0b429; --ok:#3fb950;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--fg);font:13px/1.5 "Microsoft YaHei UI","Segoe UI",sans-serif;
+       display:flex;flex-direction:column;overflow:hidden}
+  header{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--line);
+         background:var(--panel);flex:none}
+  .path{color:var(--dim);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+  .tag{background:#222833;color:#9fb0c8;border-radius:4px;padding:2px 8px;font-size:11px;white-space:nowrap}
+  .tag.bad{background:#3a2a12;color:var(--warn)}
+  button{background:#262b34;border:1px solid var(--line2);color:var(--fg);padding:6px 12px;
+         border-radius:5px;cursor:pointer;font-size:12px}
+  button:hover{background:#2f3540}
+  button:disabled{opacity:.45;cursor:default}
+  button.primary{background:var(--accent);border-color:#3f7ceb;color:#fff;font-weight:600}
+  button.primary:hover{background:#3b7cef}
+  main{flex:1;display:flex;min-height:0}
+  aside{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+  #weapons{width:190px;flex:none;overflow:auto}
+  .w{padding:6px 12px;cursor:pointer;display:flex;justify-content:space-between;color:#c3cad8;
+     border-left:2px solid transparent}
+  .w:hover{background:#22272f}
+  .w.on{background:#26313f;border-left-color:var(--accent);color:#fff}
+  .w small{color:var(--dim)}
+  section{flex:1;display:flex;flex-direction:column;min-width:0}
+  .bar{display:flex;gap:8px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--line)}
+  input[type=search]{flex:1;background:#12151a;border:1px solid var(--line2);border-radius:5px;
+        color:var(--fg);padding:6px 10px;font-size:12px;outline:none}
+  #grid{flex:1;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(126px,1fr));
+        gap:8px;padding:12px;align-content:start}
+  .card{background:#191c22;border:1px solid var(--line);border-radius:7px;padding:8px;cursor:pointer;
+        text-align:center;transition:border-color .12s,background .12s}
+  .card:hover{background:#1e222a;border-color:#39414f}
+  .card.on{border-color:var(--accent);background:#1c2635}
+  .thumb{height:74px;display:flex;align-items:center;justify-content:center;margin-bottom:5px}
+  .thumb img{max-width:100%;max-height:74px;object-fit:contain}
+  .ph{width:56px;height:56px;border-radius:8px;display:flex;align-items:center;justify-content:center;
+      font-size:20px;font-weight:700;color:#fff8}
+  .nm{font-size:12px;line-height:1.25;height:2.5em;overflow:hidden;color:#cdd3e0}
+  .sub{font-size:10px;color:var(--dim);margin-top:2px;display:flex;justify-content:center;gap:4px}
+  .dot{width:6px;height:6px;border-radius:50%;display:inline-block;margin-top:4px}
+  .legacy{background:#4a7ec7}.composite{background:#c7884a}
+  #panel{width:330px;flex:none;border-right:0;border-left:1px solid var(--line);padding:12px;
+         display:flex;flex-direction:column;gap:9px;overflow:auto}
+  #preview{height:186px;background:#0f1115;border:1px solid var(--line);border-radius:8px;
+           display:flex;align-items:center;justify-content:center;color:#5b6270;font-size:11px;
+           overflow:hidden;flex:none}
+  #preview img{max-width:100%;max-height:100%;object-fit:contain}
+  h2{margin:0;font-size:15px;font-weight:600;color:#fff}
+  .kit{color:var(--dim);font-size:11px;word-break:break-all}
+  .row{display:flex;gap:6px;flex-wrap:wrap}
+  label.lbl{color:var(--dim);font-size:11px;margin-top:2px}
+  select{width:100%;background:#12151a;border:1px solid var(--line2);border-radius:5px;color:var(--fg);
+         padding:6px 8px;font-size:12px}
+  .chk{display:flex;gap:6px;align-items:center;color:var(--dim);font-size:11px}
+  .hint{color:var(--warn);font-size:11px;min-height:16px}
+  hr{border:0;border-top:1px solid var(--line);margin:4px 0}
+  footer{flex:none;height:132px;border-top:1px solid var(--line);background:#11141a;display:flex;flex-direction:column}
+  .fhead{display:flex;gap:12px;align-items:center;padding:5px 12px;color:var(--dim);font-size:11px;
+         border-bottom:1px solid #1c2027}
+  #log{flex:1;overflow:auto;padding:6px 12px;font:11px/1.5 Consolas,"Cascadia Mono",monospace;
+       color:#98a1b1;white-space:pre-wrap}
+  .knife{display:flex;justify-content:space-between;padding:8px 12px;border-bottom:1px solid #1f242c;cursor:pointer}
+  .knife:hover{background:#22272f}
+  .knife.on{background:#26313f}
+  .kname{color:#dfe4ee}.kmeta{color:var(--dim);font-size:11px}
+  #knives{flex:1;overflow:auto}
+  .hidden{display:none!important}
+  .spinner{width:14px;height:14px;border:2px solid #333a46;border-top-color:var(--accent);
+           border-radius:50%;animation:sp .8s linear infinite;display:inline-block;vertical-align:-2px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<header>
+  <strong style="font-size:13px">CS2 本地皮肤控制台</strong>
+  <span class="path" id="path">加载中…</span>
+  <span class="tag" id="state"></span>
+  <button id="tab-skins" class="primary">皮肤</button>
+  <button id="tab-knives">刀型</button>
+  <button id="btn-audit">审计</button>
+  <button id="btn-revert">还原原版</button>
+</header>
+
+<main>
+  <aside id="weapons"></aside>
+  <section id="view-skins">
+    <div class="bar">
+      <input id="search" type="search" placeholder="筛选皮肤名 / kit 名…">
+      <span class="tag" id="count"></span>
+      <span id="busy"></span>
+    </div>
+    <div id="grid"></div>
+  </section>
+  <section id="view-knives" class="hidden">
+    <div class="bar"><span class="tag">19 把原生刀 · 换刀会自动重放皮肤补丁</span></div>
+    <div id="knives"></div>
+  </section>
+  <aside id="panel">
+    <div id="skin-head">
+      <div id="preview">选择一款皮肤</div>
+      <h2 id="k-title">—</h2>
+      <div class="kit" id="k-kit"></div>
+      <div class="row" id="k-badges"></div>
+      <hr>
+    </div>
+    <div id="skin-actions">
+      <label class="lbl">我拥有的入口皮肤（服务端要下发它的 paintindex）</label>
+      <select id="owned"></select>
+      <div class="chk" style="margin:8px 0"><input type="checkbox" id="force"><label for="force">允许跨形态 / 跨武器（结果不保证）</label></div>
+      <button class="primary" id="btn-apply" style="width:100%" disabled>应用换肤</button>
+      <div class="hint" id="hint"></div>
+    </div>
+    <div id="knife-actions" class="hidden">
+      <div class="kit" id="kn-desc">选一把刀</div>
+      <button class="primary" id="btn-knife" style="width:100%;margin-top:8px" disabled>应用刀型</button>
+      <div class="hint">换刀会从原始备份整体重建文件，皮肤补丁会被抹掉；本操作会自动按清单逐条重放。</div>
+    </div>
+    <hr>
+    <div class="row"><span class="tag" id="patch-count">补丁 0</span></div>
+    <div id="patch-list" class="kit" style="font-size:10px;line-height:1.7;max-height:150px;overflow:auto"></div>
+  </aside>
+</main>
+
+<footer>
+  <div class="fhead"><span>操作日志</span><span id="vrf-tag" class="tag"></span>
+    <span style="flex:1"></span><button id="btn-clear" style="padding:2px 8px;font-size:11px">清空</button></div>
+  <div id="log"></div>
+</footer>
+
+<script>
+const $ = s => document.querySelector(s);
+const el = (t, cls, txt) => { const e = document.createElement(t); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
+let S = { weapon: null, kit: null, weapons: [], knives: [], patches: [], tab: 'skins', knife: null };
+
+function log(text) {
+  const box = $('#log');
+  const atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
+  for (const line of String(text).split('\n')) { if (line.trim()) box.appendChild(el('div', null, line)); }
+  while (box.childElementCount > 600) box.removeChild(box.firstChild);
+  if (atBottom) box.scrollTop = box.scrollHeight;
+}
+const api = (p, body) => fetch(p, body
+  ? {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(body)}
+  : {}).then(r => r.json());
+function busy(on, txt) { $('#busy').innerHTML = on ? `<span class="spinner"></span> ${txt || ''}` : ''; }
+function hashColor(s) { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 360;
+  return `hsl(${h} 45% 42%)`; }
+
+/* ---------------- 启动 ---------------- */
+async function boot() {
+  const d = await api('/api/bootstrap');
+  S.weapons = d.weapons; S.knives = d.knives; S.patches = d.patches;
+  $('#path').textContent = d.state.csgo;
+  $('#vrf-tag').textContent = d.vrf ? '缩略图引擎就绪' : '缺 VRF · 显示色块占位';
+  $('#vrf-tag').className = 'tag' + (d.vrf ? '' : ' bad');
+  renderState(d.state);
+  renderWeapons(); renderKnives(); renderPatches();
+  if (S.weapons.length) selectWeapon(S.weapons[0].id);
+  log('已连接：' + d.state.csgo);
+  if (!d.vrf) log('未安装 Source2Viewer-CLI，缩略图降级为色块。装法：python gui/setup_vrf.py');
+}
+
+function renderState(st) {
+  const bits = [`${st.entries} 条目`];
+  if (!st.backup) bits.push('无备份');
+  else if (st.steam_updated) bits.push('⚠ 大小与备份不符');
+  else bits.push(st.patched ? '已打补丁' : '原版未修改');
+  const t = $('#state'); t.textContent = bits.join(' · ');
+  t.className = 'tag' + (st.steam_updated || !st.backup ? ' bad' : '');
+}
+
+/* ---------------- 武器 / 皮肤 ---------------- */
+function renderWeapons() {
+  const box = $('#weapons'); box.innerHTML = '';
+  for (const w of S.weapons) {
+    const d = el('div', 'w'); d.dataset.id = w.id;
+    d.append(el('span', null, w.id), el('small', null, w.kits));
+    d.onclick = () => selectWeapon(w.id);
+    box.appendChild(d);
+  }
+}
+
+async function selectWeapon(id) {
+  S.weapon = id; S.kit = null;
+  document.querySelectorAll('.w').forEach(e => e.classList.toggle('on', e.dataset.id === id));
+  $('#grid').innerHTML = '<div style="color:#5b6270;padding:20px">加载中…</div>';
+  const d = await api('/api/kits?w=' + encodeURIComponent(id));
+  renderKits(d.kits);
+  $('#count').textContent = d.kits.length + ' 款';
+  // 默认选中一款"能作为入口"的皮肤, 免得一进来就落在不可用的 composite 上
+  if (d.kits.length) {
+    const keep = S.kit && d.kits.some(k => k.kit === S.kit.kit);
+    if (!keep) {
+      const pick = d.kits.find(k => k.entry && k.cn) || d.kits.find(k => k.entry) || d.kits[0];
+      selectKit(pick);
+    }
+  }
+  const missing = d.kits.filter(k => !k.icon).length;
+  if (missing) {
+    busy(true, `导出 ${missing} 张检视图…`);
+    const r = await api('/api/export_icons', {weapon: id});
+    busy(false);
+    if (S.weapon === id) { renderKits(r.kits); log(`${id}: 检视图就绪 ${r.kits.filter(k => k.icon).length} 张`); }
+  }
+}
+
+function renderKits(kits) {
+  const q = $('#search').value.trim().toLowerCase();
+  const grid = $('#grid'); grid.innerHTML = '';
+  const list = q ? kits.filter(k => (k.cn + ' ' + k.kit).toLowerCase().includes(q)) : kits;
+  if (!list.length) { grid.innerHTML = '<div style="color:#5b6270">没有匹配的皮肤</div>'; return; }
+  for (const k of list) {
+    const c = el('div', 'card'); c.dataset.kit = k.kit;
+    if (S.kit && S.kit.kit === k.kit) c.classList.add('on');
+    const th = el('div', 'thumb');
+    if (k.icon) { const im = new Image(); im.src = k.icon; im.loading = 'lazy'; th.appendChild(im); }
+    else {
+      const ph = el('div', 'ph', (k.cn || k.kit).slice(0, 1).toUpperCase());
+      ph.style.background = hashColor(k.kit); th.appendChild(ph);
+    }
+    const nm = el('div', 'nm', k.cn || k.kit);
+    const sub = el('div', 'sub');
+    sub.append(el('span', null, k.form), el('span', 'dot ' + k.form), el('span', null, 's' + k.style));
+    c.append(th, nm, sub);
+    c.onclick = () => selectKit(k);
+    grid.appendChild(c);
+  }
+}
+
+async function selectKit(k) {
+  S.kit = k;
+  document.querySelectorAll('.card').forEach(e => e.classList.toggle('on', e.dataset.kit === k.kit));
+  $('#k-title').textContent = k.cn || k.kit;
+  $('#k-kit').textContent = k.kit;
+  const b = $('#k-badges'); b.innerHTML = '';
+  for (const t of [k.form, 'style ' + k.style, '入口 ' + (k.entry ? '可用' : '不可用')]) {
+    const s = el('span', 'tag', t); b.appendChild(s);
+  }
+  $('#hint').textContent = k.entry ? '' : '该皮肤没有材质资源条目，不能作为显示目标。';
+  fillOwned(k);
+  $('#preview').innerHTML = '导出贴图中…';
+  const d = await api('/api/kit?k=' + encodeURIComponent(k.kit));
+  if (!d.paint) { $('#preview').innerHTML = '<span style="color:#5b6270">该皮肤无独立图案贴图<br>（使用共享底图）</span>'; return; }
+  const r = await api('/api/export_tex', {path: d.paint});
+  if (S.kit && S.kit.kit === k.kit) {
+    $('#preview').innerHTML = r.url ? `<img src="${r.url}">` : '<span style="color:#5b6270">贴图导出失败，见日志</span>';
+  }
+}
+
+function fillOwned(k) {
+  const sel = $('#owned'); sel.innerHTML = '';
+  const same = S._kits || [];
+  const cands = same.filter(x => x.entry && x.kit !== k.kit)
+    .sort((a, b) => (a.form === k.form ? 0 : 1) - (b.form === k.form ? 0 : 1) || (a.cn || '').localeCompare(b.cn || ''));
+  for (const x of cands) {
+    const o = el('option', null, `${x.cn || x.kit}  [${x.form === k.form ? '同形态' : x.form}]  ${x.kit}`);
+    o.value = x.kit; sel.appendChild(o);
+  }
+  $('#btn-apply').disabled = !k.entry || !cands.length;
+  if (!cands.length) $('#hint').textContent = '这把武器没有可作为入口的皮肤：你需要至少拥有其中一款。';
+}
+
+/* ---------------- 刀型 ---------------- */
+function renderKnives() {
+  const box = $('#knives'); box.innerHTML = '';
+  for (const k of S.knives) {
+    const d = el('div', 'knife'); d.dataset.id = k.id;
+    const l = el('div'); l.append(el('div', 'kname', `${k.name}  (${k.id})`),
+      el('div', 'kmeta', `主图槽 ${k.main} · 检视槽 ${k.inspect}`));
+    d.appendChild(l);
+    d.onclick = () => {
+      S.knife = k;
+      document.querySelectorAll('.knife').forEach(e => e.classList.toggle('on', e.dataset.id === k.id));
+      $('#kn-desc').innerHTML = `<b>${k.name}</b> / ${k.id}<br>主图槽: ${k.main}<br>检视槽: ${k.inspect}`;
+      $('#btn-knife').disabled = false;
+    };
+    box.appendChild(d);
+  }
+}
+
+/* ---------------- 写操作 ---------------- */
+async function applySwap() {
+  if (!S.kit || !S.weapon) return;
+  const owned = $('#owned').value, want = S.kit.kit, force = $('#force').checked;
+  if (!confirm(`把 ${owned} 显示为 ${want}？`)) return;
+  $('#btn-apply').disabled = true; busy(true, '写入中…');
+  const r = await api('/api/swap', {weapon: S.weapon, owned, want, force});
+  busy(false); $('#btn-apply').disabled = false;
+  log(r.log || ''); log(r.ok ? '[+] 换肤成功' : '[!] 换肤失败');
+  S.patches = r.patches; renderPatches(); refreshState();
+}
+
+async function applyKnife() {
+  if (!S.knife) return;
+  if (!confirm(`把默认刀换成 ${S.knife.id}？\n（会重放全部补丁）`)) return;
+  $('#btn-knife').disabled = true; busy(true, '换刀 + 重放补丁…');
+  const r = await api('/api/knife', {id: S.knife.id});
+  busy(false); $('#btn-knife').disabled = false;
+  log(r.log || ''); log(r.ok ? '[+] 换刀成功' : '[!] 换刀失败');
+  S.patches = r.patches; renderPatches(); refreshState();
+}
+
+function renderPatches() {
+  $('#patch-count').textContent = `补丁 ${S.patches.length}`;
+  const box = $('#patch-list'); box.innerHTML = '';
+  S.patches.forEach((p, i) => {
+    const d = el('div', null, `${i + 1}. ${p.type === 'glove' ? '手套' : p.weapon}  ${p.owned} → ${p.want}`);
+    d.style.cursor = 'pointer'; d.title = '点击从清单移除';
+    d.onclick = async () => {
+      if (!confirm('从补丁清单移除这一条？（盘上文件不变）')) return;
+      const r = await api('/api/drop_patch', {index: i});
+      log(r.log || ''); S.patches = r.patches; renderPatches();
+    };
+    box.appendChild(d);
+  });
+  if (!S.patches.length) box.innerHTML = '<span style="color:#5b6270">清单为空</span>';
+}
+
+async function refreshState() {
+  const d = await api('/api/bootstrap');
+  renderState(d.state); S.patches = d.patches; renderPatches();
+}
+
+/* ---------------- 事件 ---------------- */
+$('#btn-apply').onclick = applySwap;
+$('#btn-knife').onclick = applyKnife;
+$('#search').oninput = () => renderKits(S._kits || []);
+$('#btn-clear').onclick = () => { $('#log').innerHTML = ''; };
+$('#btn-audit').onclick = async () => { busy(true, '审计中…'); const r = await api('/api/audit');
+  busy(false); log(r.log); log(r.ok ? '[+] 审计通过' : '[!] 审计失败'); refreshState(); };
+$('#btn-revert').onclick = async () => {
+  if (!confirm('把所有补丁还原为官方原版？')) return;
+  busy(true, '还原中…'); const r = await api('/api/revert'); busy(false);
+  log(r.log || ''); S.patches = r.patches; renderPatches(); refreshState();
+};
+$('#tab-skins').onclick = () => switchTab('skins');
+$('#tab-knives').onclick = () => switchTab('knives');
+function switchTab(t) {
+  S.tab = t;
+  $('#view-skins').classList.toggle('hidden', t !== 'skins');
+  $('#weapons').classList.toggle('hidden', t !== 'skins');
+  $('#view-knives').classList.toggle('hidden', t !== 'knives');
+  $('#skin-head').classList.toggle('hidden', t !== 'skins');
+  $('#skin-actions').classList.toggle('hidden', t !== 'skins');
+  $('#knife-actions').classList.toggle('hidden', t !== 'knives');
+  $('#tab-skins').className = t === 'skins' ? 'primary' : '';
+  $('#tab-knives').className = t === 'knives' ? 'primary' : '';
+}
+
+// 缓存 kits 供筛选/入口候选使用
+const _renderKits = renderKits;
+renderKits = function (kits) { S._kits = kits; _renderKits(kits); };
+boot().then(() => { if (location.hash === '#knives') switchTab('knives'); });
+</script>
+</body>
+</html>

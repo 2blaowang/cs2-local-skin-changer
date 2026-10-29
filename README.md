@@ -14,6 +14,22 @@
 - 换刀**三层齐换**：模型（外观）+ 主图（拔刀/待机/攻击/手模）+ 检视（按 F），4~6 个条目指针
 - 换肤世界模型+第一人称同时生效
 
+## 图形界面（原型）
+
+不想敲命令的话有个控制台，皮肤、贴图、刀型都能点着看：
+
+```powershell
+python gui/serve.py            # 零依赖，自动打开 http://127.0.0.1:8765
+python gui/setup_vrf.py        # 可选但强烈建议：装缩略图引擎（约 53MB），皮肤网格才有真图
+python gui/app.py              # 桌面版，需先 pip install pyside6-essentials
+```
+
+- **皮肤页**：33 把武器 × 1100+ kit。左选枪 → 中间网格看检视图（游戏里库存那张）→ 右侧看图案本体原图，选入口皮肤一键换
+- **刀型页**：19 把原生刀，标明主图槽/检视槽类型，换刀自动重放皮肤补丁
+- 界面层不碰二进制：所有写操作仍由 `scripts/` 执行，每次操作后自动审计
+
+分层是刻意的：`gui/service.py` 不认识 Qt/浏览器，套一层 HTTP 就能换 Electron / Tauri / WPF 当外壳。详见 [gui/README.md](gui/README.md)。
+
 ## 快速上手
 
 需要 Python 3.8+（推荐安装 `blake3` 包以启用全窗口校验）。
@@ -135,6 +151,13 @@ python scripts/skin_mod.py --rebuild karambit   # 换刀 + 逐条重放 + 审计
 │   ├── batch_random.py           # 批量随机换装（只从满铺贴图池挑选）
 │   ├── pack_release.py           # 生成/校验分发包（--check 逐字节比对源码）
 │   └── scan_workshop.py          # 创意工坊资产侦察（扫描订阅地图 VPK 模型清单）
+├── gui/
+│   ├── serve.py                  # 本地 Web 界面服务端（标准库，零依赖）
+│   ├── app.py                    # PySide6 桌面版界面
+│   ├── service.py                # 纯 Python 服务层（界面与 CLI 之间的唯一桥梁）
+│   ├── thumbs.py                 # 缩略图：VRF 导出 vtex_c → PNG + 缓存
+│   ├── setup_vrf.py              # 下载/解压 Source2Viewer-CLI
+│   └── web/index.html            # Web 界面
 └── references/
     └── vpk-technique.md          # VPK 格式、引擎校验机制、换肤形态规则、踩坑记录与逆向结论
 ```

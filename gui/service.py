@@ -1,0 +1,276 @@
+"""GUI 服务层 —— 纯 Python, 不依赖任何 GUI 框架。
+
+设计原则
+--------
+界面只做展示与输入, 一切二进制操作仍由 scripts/ 下已验证的 CLI 逻辑完成。
+本层不重写任何 VPK 逻辑, 只做三件事:
+
+  1. 把 CLI 函数包装成"返回 dict"的形式 (CLI 靠 print, 这里统一捕获成 log 文本)
+  2. 提供 UI 需要的只读查询 (武器 / kit / 贴图引用 / 刀型 / 状态)
+  3. 每个写操作后自动跑审计, 失败结果如实上报
+
+因此同一份服务层可以给 PySide6 直接用, 也可以套一层 HTTP 给
+Electron / Tauri / WPF 用 —— 换前端不需要动这里。
+"""
+from __future__ import annotations
+
+import contextlib
+import io
+import os
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SCRIPTS = os.path.join(ROOT, "scripts")
+if SCRIPTS not in sys.path:
+    sys.path.insert(0, SCRIPTS)
+
+import knife_mod as km          # noqa: E402
+import skin_mod as sm           # noqa: E402
+
+_ready = False
+_cache: dict = {}
+
+
+class ServiceError(RuntimeError):
+    pass
+
+
+# ---------------------------------------------------------------- 基础设施
+
+def _capture(fn, *args, **kwargs):
+    """跑一个会 print 的 CLI 函数, 返回 (返回值, 文本日志)"""
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        ret = fn(*args, **kwargs)
+    return ret, buf.getvalue()
+
+
+def bootstrap(csgo: str | None = None) -> dict:
+    """定位游戏目录 + 加载目录树。幂等, 重复调用只返回状态。"""
+    global _ready
+    if _ready:
+        return state()
+    path = csgo or km.find_csgo()
+    if not path:
+        raise ServiceError(
+            "未找到 CS2 game/csgo 目录。请先用命令行跑一次：\n"
+            '  python scripts/knife_mod.py --init --csgo "<...\\game\\csgo>"'
+        )
+    km.set_paths(path)
+    tree = km.load_ref_tree()
+    sm.tree_cache = tree
+    _ready = True
+    return state()
+
+
+def _tree() -> dict:
+    if not _ready:
+        bootstrap()
+    return sm.tree_cache
+
+
+def state() -> dict:
+    tree = _tree()
+    bak_ok = os.path.exists(km.BAK_DIR)
+    cur = km.read_dir()
+    orig = open(km.BAK_DIR, "rb").read() if bak_ok else b""
+    patched = bool(orig) and cur != orig
+    return {
+        "csgo": km.CSGO,
+        "backup": bak_ok,
+        "backup_path": km.BAK_DIR,
+        "entries": len(tree),
+        "size": len(cur),
+        "patched": patched,
+        "steam_updated": bool(orig) and len(cur) != len(orig),
+    }
+
+
+# ---------------------------------------------------------------- 只读查询
+
+def weapon_map() -> dict:
+    """{武器: {kit: vmat条目|None}} —— 含 composite-only kit (没有 vmat)"""
+    if "wmap" in _cache:
+        return _cache["wmap"]
+    tree = _tree()
+    full = {w: dict(v) for w, v in sm.build_map(tree).items()}
+    kw = sm.kit_weapon_map(tree)
+    for k in tree:
+        if not k.startswith(sm.COMPMAT):
+            continue
+        kit = k.split("/")[-1]
+        for w in kw.get(kit) or ():
+            full.setdefault(w, {}).setdefault(kit, None)
+    _cache["wmap"] = full
+    return full
+
+
+def _clean_cn(v: str | None) -> str:
+    """本地化表里混着"值是另一个键"的别名 (如 PaintKit_cu_bizon_citizen),
+    还有直接给 #Token 的, 这些都不能当名字显示"""
+    if not v:
+        return ""
+    v = v.strip()
+    if v.startswith("PaintKit_") or v.startswith("#") or v.startswith("SFUI_"):
+        return ""
+    return v
+
+
+def _name(tree, kit: str) -> str:
+    return _clean_cn(sm.cn_names(tree).get(kit)) or sm.COMMON.get(kit, "")
+
+
+def weapons() -> list[dict]:
+    wmap = weapon_map()
+    return [{"id": w, "kits": len(kits)} for w, kits in sorted(wmap.items())]
+
+
+def kits(weapon: str) -> list[dict]:
+    """某武器的全部皮肤, 带中文名 / 形态 / style / 能否作为换肤入口"""
+    tree = _tree()
+    cn = sm.cn_names(tree)
+    st = sm.kit_style(tree)
+    out = []
+    for kit in weapon_map().get(weapon, {}):
+        has_entry = (sm.COMPMAT + kit) in tree or (sm.VMATS + kit) in tree
+        style, _cp = st.get(kit, ("?", None))
+        out.append({
+            "kit": kit,
+            "cn": _clean_cn(cn.get(kit)) or sm.COMMON.get(kit, ""),
+            "form": sm.form_of(tree, kit),
+            "style": style,
+            "entry": has_entry,
+        })
+    out.sort(key=lambda d: (d["cn"] or d["kit"]).lower())
+    return out
+
+
+def kit_detail(kit: str) -> dict:
+    tree = _tree()
+    key = sm.COMPMAT + kit
+    if key not in tree:
+        key = sm.VMATS + kit
+    if key not in tree:
+        return {"kit": kit, "error": "该 kit 没有材质资源条目"}
+    texs = []
+    for p in sm.vtex_refs(key):
+        k = "vtex_c:" + p
+        if k not in tree:
+            continue
+        texs.append({"path": p, "name": p.split("/")[-1], "size": tree[k][5]})
+    texs.sort(key=lambda d: -d["size"])
+    return {
+        "kit": kit,
+        "cn": _name(tree, kit),
+        "form": sm.form_of(tree, kit),
+        "style": sm.kit_style(tree).get(kit, ("?", None))[0],
+        "material": key.split(":", 1)[1],
+        "material_size": tree[key][5],
+        "textures": texs,
+        "paint": paint_tex(kit),
+    }
+
+
+def paint_tex(kit: str) -> str | None:
+    """kit 的主贴图 (皮肤图案本体), 排除引擎共享图后取最大那张"""
+    tree = _tree()
+    key = sm.COMPMAT + kit if (sm.COMPMAT + kit) in tree else sm.VMATS + kit
+    if key not in tree:
+        return None
+    best, best_size = None, -1
+    for p in sm.vtex_refs(key):
+        low = p.lower()
+        if "/default_" in low or low.startswith("materials/default/"):
+            continue
+        if any(x in low for x in ("/shared/", "paintmask", "paintao", "_normal", "_rough")):
+            continue
+        k = "vtex_c:" + p
+        if k in tree and tree[k][5] > best_size:
+            best, best_size = p, tree[k][5]
+    return best
+
+
+def icon_key(weapon: str, kit: str, size: str = "light") -> str | None:
+    """库存/检视 UI 那张小图的 vtex 路径 (游戏预烘焙的成品图)"""
+    key = f"vtex_c:panorama/images/econ/default_generated/weapon_{weapon}_{kit}_{size}_png"
+    return key if key in _tree() else None
+
+
+def knives() -> list[dict]:
+    tree = _tree()
+    found = km.discover_knives(tree)
+    out = []
+    for k in sorted(found):
+        model, graph, disp = found[k]
+        _mv, mkind = km.main_var_for(tree, k)
+        if mkind == "完整图":
+            inspect = "留空 (完整图自管检视)"
+        elif "inspects" in graph:
+            inspect = "检视变体"
+        else:
+            inspect = "沿用默认刀"
+        out.append({"id": k, "name": disp, "main": mkind or "缺失", "inspect": inspect})
+    return out
+
+
+def patches() -> list[dict]:
+    return sm.load_patches()["patches"]
+
+
+def patch_text() -> str:
+    _r, log = _capture(sm.cmd_patches)
+    return log
+
+
+# ---------------------------------------------------------------- 写操作
+
+def _finish(fn_ret, log: str) -> dict:
+    """统一收尾: 跑审计, 合并日志"""
+    ok_audit, audit_log = _capture(sm.cmd_audit, _tree())
+    _cache.pop("state", None)
+    return {"ok": bool(fn_ret) and bool(ok_audit),
+            "log": log + "\n" + audit_log,
+            "audit_ok": bool(ok_audit)}
+
+
+def apply_swap(weapon: str, owned: str, want: str, force: bool = False) -> dict:
+    """整材质换肤: 把已拥有的 owned 显示成 want (从当前状态叠加, 不覆盖其它补丁)"""
+    ret, log = _capture(sm.cmd_swap, _tree(), weapon_map(),
+                        weapon, owned, want, True, force)
+    return _finish(ret, log)
+
+
+def apply_knife(knife: str, no_inspect: bool = False, no_main: bool = False) -> dict:
+    """换刀 + 按补丁清单整体重放 (换刀会重建文件, 必须重放, 故走 rebuild)"""
+    ret, log = _capture(sm.cmd_rebuild, knife, False, no_main, no_inspect)
+    return _finish(ret, log)
+
+
+def revert() -> dict:
+    ret, log = _capture(km.cmd_revert)
+    return _finish(True, log)
+
+
+def audit() -> dict:
+    ret, log = _capture(sm.cmd_audit, _tree())
+    return {"ok": bool(ret), "log": log, "audit_ok": bool(ret)}
+
+
+def remove_patch(index: int) -> dict:
+    """从清单里删一条 (只改清单, 不改盘上文件)"""
+    d = sm.load_patches()
+    if not (0 <= index < len(d["patches"])):
+        return {"ok": False, "log": f"索引越界: {index}"}
+    gone = d["patches"].pop(index)
+    sm.save_patches(d)
+    return {"ok": True, "log": f"已从清单移除: {gone}\n(盘上文件未变, 如需生效请 --revert 后重建)"}
+
+
+if __name__ == "__main__":  # 自检: python gui/service.py
+    print(bootstrap())
+    print("weapons:", len(weapons()))
+    ks = kits("ak47")
+    print("ak47 kits:", len(ks), ks[:3])
+    print("paint:", paint_tex("cu_ak_island_floral"))
+    print("icon:", icon_key("ak47", "cu_ak_island_floral"))
+    print("knives:", len(knives()))
