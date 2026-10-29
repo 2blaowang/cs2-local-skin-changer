@@ -36,12 +36,16 @@ python gui/serve.py                # 自动打开 http://127.0.0.1:8765
 # ② 桌面版：原生窗口
 python -m pip install pyside6-essentials
 python gui/app.py                  # 或双击 gui/run_gui.bat
+python gui/app.py --shot out.png   # 自检：等首屏加载完截图后退出
 
 # 缩略图引擎（两版都需要，可选但强烈建议）
 python gui/setup_vrf.py            # 约 53MB
 ```
 
 前提：已跑过 `python scripts/knife_mod.py --init`（要有 `pak01_dir.vpk.bak_v6` 备份）。
+
+> 装 PySide6 时如果卡在 82MB 的 wheel 上下不动（官方源常见），换镜像：
+> `python -m pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ pyside6-essentials`
 
 ## 界面
 

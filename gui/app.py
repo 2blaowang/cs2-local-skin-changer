@@ -170,7 +170,7 @@ class Main(QMainWindow):
         self.preview.setAlignment(Qt.AlignCenter)
         self.preview.setFixedHeight(190)
         self.preview.setStyleSheet(
-            "background:#11141a; border:1px solid #262b34; border-radius:8px; color:#5b6270;")
+            "background:#171b21; border:1px solid #262b34; border-radius:8px; color:#5b6270;")
         v.addWidget(self.preview)
 
         self.k_title = QLabel("—")
@@ -326,6 +326,12 @@ class Main(QMainWindow):
             self.kit_list.addItem(it)
         self.kit_list.blockSignals(False)
         self.log(f"{w}: {len(kits)} 款皮肤")
+        # 默认落到第一款"能当入口"的皮肤上 (composite-only 的 kit 没有材质条目,
+        # 一进来停在它上面会让人以为工具坏了)
+        if self.kit_list.count():
+            pick = next((i for i in range(self.kit_list.count())
+                         if self.kit_list.item(i).data(Qt.UserRole)["entry"]), 0)
+            self.kit_list.setCurrentRow(pick)
         self._attach_pending_icons(w)
 
     @staticmethod
@@ -570,6 +576,17 @@ def main():
     app.setStyleSheet(QSS)
     win = Main()
     win.show()
+    # --shot <路径>: 自检用。等首屏异步加载完再截窗口, 然后退出
+    if "--shot" in sys.argv:
+        from PySide6.QtCore import QTimer
+        out = sys.argv[sys.argv.index("--shot") + 1]
+
+        def grab():
+            win.grab().save(out)
+            print(f"[+] 已保存 {out}")
+            app.quit()
+
+        QTimer.singleShot(6000, grab)
     sys.exit(app.exec())
 
 

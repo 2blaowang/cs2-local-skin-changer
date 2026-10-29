@@ -51,7 +51,13 @@
   .legacy{background:#4a7ec7}.composite{background:#c7884a}
   #panel{width:330px;flex:none;border-right:0;border-left:1px solid var(--line);padding:12px;
          display:flex;flex-direction:column;gap:9px;overflow:auto}
-  #preview{height:186px;background:#0f1115;border:1px solid var(--line);border-radius:8px;
+  #preview{height:186px;background-color:#14171c;
+           background-image:linear-gradient(45deg,#1d2027 25%,transparent 25%),
+             linear-gradient(-45deg,#1d2027 25%,transparent 25%),
+             linear-gradient(45deg,transparent 75%,#1d2027 75%),
+             linear-gradient(-45deg,transparent 75%,#1d2027 75%);
+           background-size:16px 16px;background-position:0 0,0 8px,8px -8px,-8px 0;
+           border:1px solid var(--line);border-radius:8px;
            display:flex;align-items:center;justify-content:center;color:#5b6270;font-size:11px;
            overflow:hidden;flex:none}
   #preview img{max-width:100%;max-height:100%;object-fit:contain}
