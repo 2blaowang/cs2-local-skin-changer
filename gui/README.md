@@ -96,8 +96,13 @@ python gui/setup_vrf.py            # 约 53MB
 - **检视图路径不能拼**：M4A4 在 panorama 里叫 `m4a1`，拼 `weapon_m4a4` 会 0 命中；
   必须按"最长 UI 名前缀"从树里反解（`service._icon_index()`），且**绝不整目录兜底**
   —— `default_generated` 有 6000+ 张几百 MB，误触发就是几分钟白等
-- **默认选中要挑"能当入口"的 kit**：composite-only 的 kit 没有材质条目，
-  一进页面落在它上面会让人以为工具坏了
+- **默认选中要挑有中文名、有材质条目的 kit**：落在没名字也没资源的 kit 上，
+  一进页面就分不清是哪款、按钮还是灰的，容易被当成工具坏了
+- **材质条目不能拼路径**：`COMPMAT + kit` 拼出来是 `weapons/paints/<kit>`，但
+  composite 的 vcompmat 在 `weapons/paints/community/community_35/<kit>`、
+  legacy 的在 `weapons/paints/legacy/<kit>` —— 硬拼一律落空。曾经的后果是
+  AK-47 的 16/61 个皮肤被判成"没有材质资源条目"、换肤按钮全灰。必须按文件名
+  在树里搜（`sm._material_keys`），`service._mat_keys()` 就是这层的唯一入口
 
 ## 已知限制
 
@@ -105,6 +110,9 @@ python gui/setup_vrf.py            # 约 53MB
   （baseColor × mask1 × mask2 × 磨损），不在原型范围
 - composite 类 kit 的图案本体是**合成输入**（psd 元素层），直接看会显得"缺色"，
   真实效果要引擎把 mask/ao 也算进去
+- **composite 皮肤只能用"整材质换肤"**：它是节点图配方，得挂进一个**你已拥有的
+  皮肤槽位**（有服务端 paintindex）才会被合成器执行。界面上就是"入口皮肤"下拉框
+  —— 选一款你有的、同形态的，把它的配方换成目标皮肤
 - **库存读取（"我拥有哪些皮肤"）还没接**：入口下拉目前是全量候选。
   下一步接 `steamcommunity.com/inventory/<steamid>/730/2`（要求库存公开），
   用 `market_hash_name` 的中文名反查 kit —— `service._name()` 已有映射能力；

@@ -576,7 +576,15 @@ def cmd_list(tree, wmap, w):
 
 def cmd_apply(tree, wmap, w, kit, tex=False, stack=False, layers=False):
     if w not in wmap or kit not in wmap[w]:
-        print(f"[!] 未知组合 {w} + {kit}; 见 --list {w}")
+        # 区分"根本没有这个组合"和"这个 kit 是 composite, 天生不能走 --skin":
+        # 后者报"未知组合"会让人以为拼错了名字
+        if _material_keys(tree, kit) and form_of(tree, kit) == "composite":
+            print(f"[!] {kit} 是 composite 形态: 只有 vcompmat 节点图, 没有可指向的 vmat。")
+            print("    默认涂装槽不是物品 (服务端不下发 paintindex), 合成器不会启动,")
+            print("    所以它只能挂进一个你已拥有的皮肤槽位 —— 改用整材质换肤:")
+            print(f"    python skin_mod.py --swap {w} <你已拥有的皮肤> {kit}")
+        else:
+            print(f"[!] 未知组合 {w} + {kit}; 见 --list {w}")
         return False
     plan = []  # (目标条目, 源条目, 角色)
     if tex:

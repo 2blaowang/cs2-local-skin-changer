@@ -98,6 +98,7 @@ python scripts/skin_mod.py --skin m4a4 am_kimono_sunrise --tex --stack   # 叠�
 ```
 
 - 只把武器默认 `_color` 贴图条目重指向皮肤主贴图数据，保持武器原生 vmat/shader。整 vmat 重指向实测武器全透明（皮肤 vmat 走合成管线 shader，直接渲染输出 alpha=0）
+- **composite 皮肤走不了这条流程**（`--list` 里标 `(composite, 仅 --swap)` 的就是）：`--skin` 要求 kit 有 `vmats/<kit>.vmat` 这份**已烘焙的静态材质**，composite 只有 vcompmat 节点图。合成器只在"服务端下发了 paintindex 的物品槽位"上启动，默认涂装槽没有 paintindex，把节点图塞进去没人计算 → 拿不到画面。要用 composite 皮肤，必须有一个**已拥有的皮肤槽位**，走 `--swap` 把配方换过去
 - **效果上限是"图案平铺全枪"**：无 paintmask 蒙版分色、无磨损合成，质感仍是默认涂装
 - **选皮规则**：`tga` 单层满铺成品图（血竞/皇后/破晓等大图）图案完整；`psd` 图案元素层（火蛇/咆哮等）只是合成管线输入，直接平铺必然残缺。`tex_targets` 已内置 tga 优先+大图优先，`batch_random.py` 只从满铺池挑选
 - 诊断工具：`python scripts/diagnose_skin.py --weapons` 列出每个皮肤的完整度评级（FULL/BROKEN）

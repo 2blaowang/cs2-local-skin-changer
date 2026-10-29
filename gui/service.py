@@ -178,13 +178,37 @@ def weapons() -> list[dict]:
     return [{"id": w, "kits": len(kits)} for w, kits in sorted(wmap.items())]
 
 
+def _mat_keys(tree, kit: str) -> dict:
+    """kit 的材质条目 {资源类型前缀: 树 key}
+
+    **千万不要拼 `COMPMAT + kit`**: composite 皮肤的 vcompmat 放在
+    `weapons/paints/community/community_35/<kit>` 这种子目录里, legacy 的放在
+    `weapons/paints/legacy/<kit>`, 硬拼一律落空 —— 结果就是界面把全部
+    composite 判成"没有材质资源条目"、换肤按钮全灰。
+    """
+    return sm._material_keys(tree, kit)
+
+
+def _primary_key(tree, kit: str) -> str | None:
+    """kit 的主材质条目, 贴图引用优先取 vmat
+
+    legacy 的 vcompmat 只是一份"转交声明"(SPECIFIC_MATERIAL), 真正的
+    albedo/mask/normal 引用都在 vmat 里; composite 没有 vmat, 只能看 vcompmat。
+    """
+    keys = _mat_keys(tree, kit)
+    for p in (sm.VMATS, sm.COMPMAT):
+        if p in keys:
+            return keys[p]
+    return None
+
+
 def kits(weapon: str) -> list[dict]:
     """某武器的全部皮肤, 带中文名 / 形态 / style / 能否作为换肤入口"""
     tree = _tree()
     st = sm.kit_style(tree)
     out = []
     for kit in weapon_map().get(weapon, {}):
-        has_entry = (sm.COMPMAT + kit) in tree or (sm.VMATS + kit) in tree
+        has_entry = bool(_mat_keys(tree, kit))
         style, _cp = st.get(kit, ("?", None))
         out.append({
             "kit": kit,
@@ -199,10 +223,8 @@ def kits(weapon: str) -> list[dict]:
 
 def kit_detail(kit: str) -> dict:
     tree = _tree()
-    key = sm.COMPMAT + kit
-    if key not in tree:
-        key = sm.VMATS + kit
-    if key not in tree:
+    key = _primary_key(tree, kit)
+    if key is None:
         return {"kit": kit, "error": "该 kit 没有材质资源条目"}
     texs = []
     for p in sm.vtex_refs(key):
@@ -226,8 +248,8 @@ def kit_detail(kit: str) -> dict:
 def paint_tex(kit: str) -> str | None:
     """kit 的主贴图 (皮肤图案本体), 排除引擎共享图后取最大那张"""
     tree = _tree()
-    key = sm.COMPMAT + kit if (sm.COMPMAT + kit) in tree else sm.VMATS + kit
-    if key not in tree:
+    key = _primary_key(tree, kit)
+    if key is None:
         return None
     best, best_size = None, -1
     for p in sm.vtex_refs(key):
