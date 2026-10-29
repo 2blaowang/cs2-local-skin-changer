@@ -221,7 +221,7 @@ def discover_knives(tree):
     return knives
 
 
-def build_targets(orig_tree, knife, force_inspect=False, no_main=False):
+def build_targets(orig_tree, knife, force_inspect=False, no_main=False, no_inspect=False):
     """要重指向的条目 -> (pack, offset, len, crc)
 
     三条槽位, 各管一件事, 缺一条就出对应症状:
@@ -230,8 +230,15 @@ def build_targets(orig_tree, knife, force_inspect=False, no_main=False):
       检视槽  GRAPH_*  按 F 的检视玩法 (不换 = 播默认刀的检视)
 
     主图槽默认跟模型一起换; 若新图在游戏里表现异常, 加 --no-main 只换模型和检视。
-    检视槽只在「有 inspects 变体」或显式 force_inspect 时才写 —— 没有变体的刀
-    (butterfly) 把 8.3KB 完整图塞进 4.9KB 变体槽会进 INSPECT_LOOP 且无退出路径。
+
+    检视槽的填法取决于主图槽填的是哪一类图:
+      变体体系 (16 把)     主图槽=同名变体, 检视槽必须填同名检视变体, 否则播匕首检视
+      独立完整图 (3 把)    主图槽=完整图, 检视槽**留空**。完整图自带完整检视状态机
+                          (INSPECT_LOOP + OUTRO + USE_FIXUP_VERSION), 一旦让 inspects
+                          体系的单段变体接管, 就只剩"播一次 + CANCEL", 丢掉循环与收尾
+                          (爪刀实测: 表现为"少一个检视动作")。
+    完整图塞进检视槽则是反向错误: 4.9KB 的槽装 8.3KB 状态机, 进 INSPECT_LOOP
+    又收不到 INSPECTCANCEL, 播完不停、连续重复触发。
     """
     knives = discover_knives(orig_tree)
     if knife not in knives:
@@ -240,13 +247,15 @@ def build_targets(orig_tree, knife, force_inspect=False, no_main=False):
     m = orig_tree[model]
     out = {MODEL_T: (m[3], m[4], m[5], m[1]),
            MODEL_CT: (m[3], m[4], m[5], m[1])}
-    if not no_main:
-        mv, _kind = main_var_for(orig_tree, knife)
-        if mv:
-            e = orig_tree[mv]
-            out[MAIN_T] = (e[3], e[4], e[5], e[1])
-            out[MAIN_CT] = (e[3], e[4], e[5], e[1])
-    if "inspects" in graph or force_inspect:
+    mv, mkind = main_var_for(orig_tree, knife)
+    if not no_main and mv:
+        e = orig_tree[mv]
+        out[MAIN_T] = (e[3], e[4], e[5], e[1])
+        out[MAIN_CT] = (e[3], e[4], e[5], e[1])
+    # 独立完整图刀型自动留空检视槽 (force_inspect 可强行退回变体接管)
+    if mkind == "完整图" and not force_inspect:
+        no_inspect = True
+    if ("inspects" in graph or force_inspect) and not no_inspect:
         g = orig_tree[graph]
         out[GRAPH_T] = (g[3], g[4], g[5], g[1])
         out[GRAPH_CT] = (g[3], g[4], g[5], g[1])
@@ -260,17 +269,19 @@ def cmd_list():
     for k in sorted(knives):
         model, graph, disp = knives[k]
         _mv, mkind = main_var_for(tree, k)
-        if "inspects" in graph:
-            gtype = "检视变体 OK"
+        if mkind == "完整图":
+            gtype = "检视槽留空 (完整图自管检视)"
+        elif "inspects" in graph:
+            gtype = "检视槽→变体"
         else:
             gtype = "[!] 无检视变体 (检视沿用默认刀)"
         print(f"  --knife {k:<10} {disp:<8} 主图槽={mkind or '缺失':<6} {gtype}")
 
 
-def cmd_apply(knife, force_inspect=False, no_main=False):
+def cmd_apply(knife, force_inspect=False, no_main=False, no_inspect=False):
     orig = open(BAK_DIR, "rb").read()
     orig_tree = parse_tree(orig)
-    targets = build_targets(orig_tree, knife, force_inspect, no_main)
+    targets = build_targets(orig_tree, knife, force_inspect, no_main, no_inspect)
     cur = bytearray(orig)
     for t, (a, o, l, c) in targets.items():
         foff = orig_tree[t][0]
@@ -285,7 +296,12 @@ def cmd_apply(knife, force_inspect=False, no_main=False):
     mv, mkind = main_var_for(orig_tree, knife)
     parts = []
     parts.append(f"主图槽→{mkind}" if MAIN_T in targets else "主图槽未动")
-    parts.append("检视槽→" + ("变体" if GRAPH_T in targets else "未动"))
+    if GRAPH_T in targets:
+        parts.append("检视槽→变体")
+    elif mkind == "完整图":
+        parts.append("检视槽留空 (完整图自管检视)")
+    else:
+        parts.append("检视槽未动")
     print(f"[+] 已替换为 {knife} ({len(targets)} 个条目指针 + other_md5 重算)  " + ", ".join(parts))
     if mv:
         print(f"    主图: {mv.split('/')[-1]}  {orig_tree[mv][5]}B")
@@ -328,7 +344,7 @@ def audit_pack(path, pack_id, harr):
     return ok
 
 
-def cmd_audit(knife=None, force_inspect=False, no_main=False):
+def cmd_audit(knife=None, force_inspect=False, no_main=False, no_inspect=False):
     print("========== 审计 ==========")
     ok = True
     cur = read_dir()
@@ -350,7 +366,7 @@ def cmd_audit(knife=None, force_inspect=False, no_main=False):
     in_entry = True
     extra = ""
     if knife:
-        targets = build_targets(orig_tree, knife, force_inspect, no_main)
+        targets = build_targets(orig_tree, knife, force_inspect, no_main, no_inspect)
         expect = set()
         for t in targets:
             foff = orig_tree[t][0]
@@ -379,7 +395,7 @@ def cmd_audit(knife=None, force_inspect=False, no_main=False):
     ok &= good
     # 涉及的 pack 全窗口审计
     packs = set()
-    src = build_targets(orig_tree, knife, force_inspect, no_main) if knife else {}
+    src = build_targets(orig_tree, knife, force_inspect, no_main, no_inspect) if knife else {}
     for t in (src or {}).values():
         packs.add(t[0])
     if packs:
@@ -413,14 +429,15 @@ if __name__ == "__main__":
         sys.exit(0 if cmd_audit() else 1)
     elif "--audit" in args:
         k = args[args.index("--audit") + 1] if len(args) > args.index("--audit") + 1 and not args[args.index("--audit") + 1].startswith("--") else None
-        sys.exit(0 if cmd_audit(k, "--force-inspect" in args, "--no-main" in args) else 1)
+        sys.exit(0 if cmd_audit(k, "--force-inspect" in args, "--no-main" in args, "--no-inspect" in args) else 1)
     elif "--knife" in args:
         i = args.index("--knife")
         if len(args) <= i + 1 or args[i + 1].startswith("--"):
             print("[!] --knife 需要刀型名, 见 --list"); sys.exit(1)
         fi = "--force-inspect" in args
         nm = "--no-main" in args
-        cmd_apply(args[i + 1], fi, nm)
-        sys.exit(0 if cmd_audit(args[i + 1], fi, nm) else 1)
+        ni = "--no-inspect" in args
+        cmd_apply(args[i + 1], fi, nm, ni)
+        sys.exit(0 if cmd_audit(args[i + 1], fi, nm, ni) else 1)
     else:
         print(__doc__)

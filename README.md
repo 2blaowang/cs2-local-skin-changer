@@ -22,8 +22,9 @@
 # 换刀
 python scripts/knife_mod.py --init              # 首次使用：自动探测游戏路径 + 建原始备份
 python scripts/knife_mod.py --list              # 列出 19 种可用刀型
-python scripts/knife_mod.py --knife karambit    # 换成爪子刀（模型+主图+检视，自动审计）
-python scripts/knife_mod.py --knife butterfly   # 蝴蝶刀：主图槽给完整图，检视槽不动（已验证正常）
+python scripts/knife_mod.py --knife karambit    # 换成爪子刀（仅换刀，会抹掉换肤补丁）
+python scripts/skin_mod.py --patches            # 查看补丁清单（每次 --swap/--glove 自动记录）
+python scripts/skin_mod.py --rebuild karambit   # 换刀 + 自动重放全部换肤补丁（推荐，一条命令）
 python scripts/knife_mod.py --revert            # 还原默认刀
 
 # 换肤（首次使用共用 knife_mod --init 建的备份）
@@ -64,10 +65,22 @@ python scripts/knife_mod.py --init --csgo "D:\Steam\steamapps\common\Counter-Str
 
 主图槽必须直接改：顶层 `viewmodel` 按 `m_variationID` 选子图，而 variationID 来自物品数据，重指向改不了它，所以永远命中 `+default_ct` 那个装着匕首状态机的变体。
 
-- 16 把中小刀型：主图槽填同名变体 `viewmodel_knife.vnmgraph+<刀名>`，检视槽填 `viewmodel_inspects.vnmgraph+knife_<刀名>`
-- **karambit / butterfly / talon**：主图槽填独立完整图 `viewmodel_knife_<刀名>`；butterfly 没有检视变体，检视槽**完全不动**（完整图自带 `BLOCK_INSPECT` 自己管检视，已实测正常）
-- 检视槽**绝不能**塞完整图：完整图自带 `INSPECT_LOOP` 且没有 `INSPECTCANCEL` 退出口，会"播完不停、连续重复触发"。`--force-inspect` 仅供观察多段转刀，会循环
-- `--no-main`：只换模型与检视，用于排查完整图端口契约不兼容（视角模型消失/T-pose）
+- 16 把中小刀型：主图槽填同名变体 `viewmodel_knife.vnmgraph+<刀名>`，检视槽填 `viewmodel_inspects.vnmgraph+knife_<刀名>`（共 6 条）
+- **karambit / butterfly / talon**：主图槽填独立完整图 `viewmodel_knife_<刀名>`，**检视槽留空**（共 4 条）。完整图自带整套检视状态机（`INSPECT_LOOP` + `OUTRO` 收尾），自己接管检视；交给检视变体接管就只剩"播一次"，会**少一个收尾动作**（爪子刀实测）
+- 检视槽**绝不能**塞完整图：4.9KB 的槽装 8.3KB 状态机，会进 `INSPECT_LOOP` 且收不到 `INSPECTCANCEL`，表现为"播完不停、连续重复触发"。`--force-inspect` 就是这个错误配置
+- 检视段数由官方资源决定：butterfly 3 段、talon 2 段、**karambit 只有 1 段**（不是改丢了）
+- `--no-inspect`：显式留空检视槽（完整图型已是默认，一般不用写）；`--no-main`：只换模型与检视，用于排查完整图端口契约不兼容（视角模型消失/T-pose）
+
+### 换刀后记得补肤：`--rebuild`
+
+换刀是从原始备份**整体重建**文件，会把所有换肤补丁抹掉。每成功应用一条 `--swap`/`--glove` 会自动记进 `patches.json`（同一槽位覆盖、不重复），所以换刀用一条命令就够：
+
+```powershell
+python scripts/skin_mod.py --patches            # 先看清单
+python scripts/skin_mod.py --rebuild karambit   # 换刀 + 逐条重放 + 审计
+```
+
+清单是个人库存配置，已加入 `.gitignore`；跨 `--revert` 保留，Steam 还原后直接 `--rebuild` 即可恢复全部状态。
 
 ## 两种换肤流程怎么选
 

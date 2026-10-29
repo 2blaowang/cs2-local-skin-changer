@@ -21,16 +21,17 @@ description: CS2 本地视觉替换与 VPK 树条目重指向补丁，支持 19 
 ```
 python scripts/knife_mod.py --init            # 首次使用: 探测游戏路径 + 建原始备份 + 依赖检查
 python scripts/knife_mod.py --list            # 列出 19 种可用刀型，标主图槽/检视槽类型
-python scripts/knife_mod.py --knife karambit  # 切换（模型 2 + 主图 2 + 检视 2，按刀型定 + other_md5 重算 + 自动审计）
-python scripts/knife_mod.py --knife butterfly # 蝴蝶刀: 主图槽给完整图, 检视槽不动
-python scripts/knife_mod.py --knife butterfly --no-main        # 排查用: 主图槽不动
-python scripts/knife_mod.py --knife butterfly --force-inspect  # 强行把完整图塞检视槽(会循环)
+python scripts/knife_mod.py --knife bayonet   # 变体体系刀型: 模型 2 + 主图 2 + 检视 2 = 6 条
+python scripts/knife_mod.py --knife karambit  # 独立完整图刀型: 模型 2 + 主图 2 = 4 条（检视槽自动留空）
+python scripts/knife_mod.py --knife karambit --no-inspect      # 显式留空检视槽（完整图型已是默认，一般不用写）
+python scripts/knife_mod.py --knife karambit --no-main         # 排查用: 主图槽不动
+python scripts/knife_mod.py --knife karambit --force-inspect   # 强行让检视变体接管(完整图型会丢收尾动作)
 python scripts/knife_mod.py --revert          # 还原默认刀
 python scripts/knife_mod.py --audit           # 审计当前状态（可带刀型名）
 ```
 
 1. 新机器/首次使用先跑 --init（自动经注册表 + libraryfolders.vdf 探测 Steam 库；失败时用 `--init --csgo "<路径>"` 手动指定）。它会把 pak01_dir.vpk 复制为 pak01_dir.vpk.bak_v6 作为原始基准——所有修改与回滚都以此为基准
-2. --list 选刀 → --knife 应用 → 让用户进离线机器人局验证
+2. --list 选刀 → `--rebuild <刀型>` 应用（同时重放换肤补丁）→ 让用户进离线机器人局验证。**只有第一次、还没配任何皮肤时才用 `--knife <刀型>`**；已有皮肤时一律走 `--rebuild`，否则皮肤补丁会被抹掉
 3. 每次汇报附带提醒：VAC 官方局先还原；Steam「验证完整性」会把 pak01_dir.vpk 还原成官方原版（.bak_v6 备份不受影响仍有效），之后重跑 --knife 即可
 
 ## 换肤流程 A：整材质换肤（`--swap`，拥有皮肤时首选）
@@ -43,6 +44,10 @@ python scripts/skin_mod.py --list ak47                                   # 列�
 python scripts/skin_mod.py --family doppler                              # 按名字查同族皮肤及其形态（多普勒/宝石/渐变/手套）
 python scripts/skin_mod.py --swap ak47 cu_ak47_mastery cu_ak_island_floral          # 精英之作 → 野荷
 python scripts/skin_mod.py --swap awp awp_tempered awp_queens_gambit --stack        # 叠加（保留已有补丁）
+python scripts/skin_mod.py --patches                                     # 查看补丁清单
+python scripts/skin_mod.py --rebuild karambit                            # 换刀 + 按清单重放全部补丁（一条命令）
+python scripts/skin_mod.py --rebuild butterfly --no-main                 # 同上，主图槽不动
+python scripts/skin_mod.py --rebuild karambit --force-inspect            # 检视变体强行接管（非默认，会丢收尾）
 python scripts/skin_mod.py --swap mp9 mp9_nexus am_sapphire_marbleized --force --stack  # 跨武器+跨形态（只有入口 vcompmat 一条）
 python scripts/skin_mod.py --revert                                      # 还原（与换刀共用备份）
 python scripts/skin_mod.py --audit                                       # 审计
@@ -97,6 +102,9 @@ python scripts/skin_mod.py --skin m4a4 am_kimono_sunrise --tex --stack   # 叠�
 - **选皮规则**：`tga` 单层满铺成品图（血竞/皇后/破晓等大图）图案完整；`psd` 图案元素层（火蛇/咆哮等）只是合成管线输入，直接平铺必然残缺。`tex_targets` 已内置 tga 优先+大图优先，`batch_random.py` 只从满铺池挑选
 - 诊断工具：`python scripts/diagnose_skin.py --weapons` 列出每个皮肤的完整度评级（FULL/BROKEN）
 - `--stack`：叠加补丁（多武器同时换装），带大小保护（文件被 Steam 还原则拒绝）；不带时从原始备份重建，覆盖此前补丁
+- **补丁清单 `patches.json`**：每成功应用一条 `--swap`/`--glove` 就自动记一条（同 `类型+武器+owned` 覆盖，不会重复）。`--patches` 查看
+- **`--rebuild <刀型>`**：换刀会从原始备份整体重建文件、抹掉全部换肤补丁，所以换刀后必须重放。这条命令把「换刀 + 按清单逐条 `--stack` 重放 + 审计」一次做完，是换刀的正确姿势（不要手动逐条补，容易漏）
+  - 换刀前先进 `--rebuild`，避免忘了补肤；清单跨换刀、跨 `--revert` 都会保留（个人库存配置，已 gitignore）
 - M4A4 特例已处理：panorama 里叫 `m4a1`、检视材质目录 `rif_m4a1`（消音版 `rif_m4a1_s` 专属），由 ALIAS/VIEW_ALIAS 表自动映射
 - 刀皮肤：整 vmat 重指向刀全透明；贴图模式只能平铺共享小图案（fade/大马士革/大理石纹），无预烘焙成品图，效果有限
 
@@ -109,12 +117,22 @@ python scripts/skin_mod.py --skin m4a4 am_kimono_sunrise --tex --stack   # 叠�
   | 模型槽 | `vmdl_c:.../knife_default_t\|ct` | 外观几何 | 看不见目标刀 |
   | **主图槽** | `viewmodel_knife.vnmgraph+default_t\|ct` | **idle / 拔刀 / 攻击 / 手模姿势** | **拔刀和手臂还是匕首的** |
   | 检视槽 | `viewmodel_inspects.vnmgraph+knife_default_t\|ct` | 按 F 的检视玩法 | 播默认刀的检视 |
-  通常 4 条（模型 2 + 主图 2）；检视槽按下面规则决定是否写
+  变体体系刀型 6 条（模型 2 + 主图 2 + 检视 2）；独立完整图刀型 4 条（模型 2 + 主图 2，检视槽留空）
 - **为什么主图槽必须直接改**：顶层 `vnmgraph_c:.../viewmodel`（20.8KB）是总调度表，用 `referencedGraphSlot` + `m_variationID` 选子图，而 variationID 来自物品数据——换指针改不了它，永远是 `+default_ct` 被选中。所以只能改这个槽位里的指针，指望"换模型自动带动作"是不成立的
 - **主图槽填什么**：19 把刀里 16 把走"变体体系"，填同名变体 `viewmodel_knife.vnmgraph+<刀名>`；**只有 karambit / butterfly / talon 三把是独立完整图** `viewmodel_knife_<刀名>`（8.2~8.3KB），填完整图。`main_var_for()` 自动判定
-- **检视槽规则**：只填 `viewmodel_inspects.vnmgraph+knife_<刀名>` 这种**变体**（约 4.9KB，97.7% 同构）。**绝不能填完整图**——完整图自带 `INSPECT_LOOP` 且没有 `INSPECTCANCEL` 退出路径，塞进检视槽会播完不停、连续重复触发。这也正是 butterfly 的解法：它没有检视变体，所以**主图槽给完整图、检视槽完全不动**，完整图自带 `BLOCK_INSPECT` 自己管检视（已实测：拔刀/手模/待机/检视全部正常）
+- **检视槽填法分两类，取决于主图槽填的哪类图**（`build_targets()` 已自动判定）：
+  - **变体体系（16 把）**：检视槽填同名**检视变体** `viewmodel_inspects.vnmgraph+knife_<刀名>`（约 4.9KB，与 default 变体 97.7% 同构）。不填就播匕首的检视
+  - **独立完整图（karambit / butterfly / talon）**：检视槽**留空**。完整图自带整套检视状态机，自己接管检视
+- **为什么完整图型要留空**：两份资源的检视流程不同——
+  | | 完整图 `viewmodel_knife_<刀名>` | 检视变体 `+knife_<刀名>` |
+  |---|---|---|
+  | 状态 | `INSPECT_LOOP` + **`OUTRO`** + `USE_FIXUP_VERSION` | `INSPECT_USE_DRAW_VERSION` + `CANCEL` |
+  | 流程 | 进检视 → 循环 → **收尾** → 回待机 | 播一次 → 直接取消 |
+  让变体接管，就只剩"播一次"，**丢掉循环与 OUTRO 收尾**——爪子刀实测表现为"少一个检视动作"；留空交给完整图，流程完整（已实测确认）
+- **绝不能把完整图塞进检视槽**：4.9KB 的槽装 8.3KB 状态机，进 `INSPECT_LOOP` 又收不到 `INSPECTCANCEL`，会播完不停、连续重复触发（`--force-inspect` 就是这个错误配置）
+- 检视段数由资源决定，改不了：butterfly 3 段、css 7 段、talon/skeleton/stiletto/ursus 等 2 段、**karambit 只有 1 段 `lookat01_karambit`**（官方本就如此，不是改丢了）
 - 检视动画：段数/循环逻辑在 vnmgraph_c 而非 clip；检视图按完整内容路径引用动画条目（原生直接加载，骨架天然匹配）
-- 退避开关：`--no-main` 只换模型与检视（主图槽不动，用于排查完整图端口契约不兼容）；`--force-inspect` 强行把完整图写进检视槽（会循环，仅供观察多段检视）
+- 退避开关：`--no-inspect` 显式留空检视槽（完整图型已是默认）；`--no-main` 只换模型与检视（主图槽不动，用于排查完整图端口契约不兼容）；`--force-inspect` 让检视变体强行接管（完整图型会丢收尾）
 - 已知限制：换刀只能用各刀原色外观；换肤效果取决于走哪条流程——`--swap`（拥有皮肤）是官方级，`--skin --tex`（无皮肤）只能是图案平铺（见 references/vpk-technique.md）
 - 模型来源仅限官方 pak01 内 19 种原生刀：创意工坊地图无武器模型资产（实测 12 图 6505 模型 0 命中，全是环境资产）；外置/自制/创意工坊 VPK 挂载被签名链密码学锁死（详见 references/vpk-technique.md）
 

@@ -29,6 +29,9 @@ import struct, hashlib, sys, os, json, re
 import knife_mod as km
 
 SNAP = os.path.join(km.SCRIPT_DIR, "skin_mod_snapshot.json")
+# 补丁清单: 每成功应用一条 --swap/--glove 就记一条, --rebuild 换刀后按它重放。
+# 换刀会从原始备份整体重建文件, 会抹掉全部换肤补丁, 所以必须有一份可重放的清单。
+PATCHES = os.path.join(km.SCRIPT_DIR, "patches.json")
 tree_cache = None  # vtex 读取用
 RE_BASE = re.compile(r"^vmat_c:weapons/models/([^/]+)/materials/weapon_[^/]+$")
 RE_VIEW = re.compile(r"^vmat_c:materials/models/weapons/v_models/([^/]+)/[^/]+$")
@@ -379,7 +382,57 @@ def cmd_glove(tree, owned, want, stack=False, force=False):
         te, se = tree[t], tree[s]
         print(f"    [{role:<6}] {t.split(':', 1)[1].split('/')[-1]:<40}"
               f" pack {te[3]:03d} -> {se[3]:03d}   {te[5]}B -> {se[5]}B")
-    return _commit(plan, stack)
+    if not _commit(plan, stack):
+        return False
+    e = {"type": "glove", "owned": owned, "want": want}
+    if force:
+        e["force"] = True
+    record_patch(e)
+    return True
+
+
+def load_patches():
+    if os.path.exists(PATCHES):
+        try:
+            with open(PATCHES, encoding="utf-8") as f:
+                d = json.load(f)
+            d.setdefault("patches", [])
+            return d
+        except Exception:
+            pass
+    return {"patches": []}
+
+
+def save_patches(d):
+    with open(PATCHES, "w", encoding="utf-8") as f:
+        json.dump(d, f, indent=2, ensure_ascii=False)
+
+
+def record_patch(entry):
+    """记一条补丁; 同槽位 (type+weapon+owned) 覆盖而非重复"""
+    d = load_patches()
+    key = (entry["type"], entry.get("weapon"), entry["owned"])
+    d["patches"] = [p for p in d["patches"]
+                    if (p["type"], p.get("weapon"), p["owned"]) != key]
+    d["patches"].append(entry)
+    save_patches(d)
+
+
+def cmd_patches():
+    d = load_patches()
+    ps = d["patches"]
+    if not ps:
+        print("[!] 补丁清单为空; 先跑几条 --swap / --glove 会自动记录")
+        return
+    print(f"补丁清单 ({len(ps)} 条, {os.path.basename(PATCHES)}):")
+    for i, p in enumerate(ps, 1):
+        if p["type"] == "swap":
+            f = " --force" if p.get("force") else ""
+            print(f"  {i:>2}. swap   {p['weapon']:<14} {p['owned']:<30} -> {p['want']}{f}")
+        else:
+            f = " --force" if p.get("force") else ""
+            print(f"  {i:>2}. glove  {'(手套)':<14} {p['owned']:<30} -> {p['want']}{f}")
+    print("\n换刀后用它整体重放:  python scripts/skin_mod.py --rebuild <刀型>")
 
 
 def _commit(plan, stack=False):
@@ -438,7 +491,42 @@ def cmd_swap(tree, wmap, w, owned, want, stack=False, force=False):
         te, se = tree[t], tree[s]
         print(f"    [{role:<6}] {t.split(':', 1)[1].split('/')[-1]:<44}"
               f" pack {te[3]:03d} -> {se[3]:03d}   {te[5]}B -> {se[5]}B")
-    return _commit(plan, stack)
+    if not _commit(plan, stack):
+        return False
+    e = {"type": "swap", "weapon": w, "owned": owned, "want": want}
+    if force:
+        e["force"] = True
+    record_patch(e)
+    return True
+
+
+def cmd_rebuild(knife, force_inspect=False, no_main=False, no_inspect=False):
+    """换刀 + 按补丁清单整体重放, 一条命令回到完整状态
+
+    换刀 (km.cmd_apply) 是从原始备份整体重建文件, 会抹掉全部换肤补丁,
+    所以换完必须重放。清单里的每条都用 --stack 叠加到当前文件。
+    """
+    ps = load_patches()["patches"]
+    print(f"[*] 重建: 刀 = {knife}, 待重放补丁 {len(ps)} 条")
+    km.cmd_apply(knife, force_inspect, no_main, no_inspect)
+    tree, wmap = tree_cache, build_map(tree_cache)
+    ok = True
+    for i, p in enumerate(ps, 1):
+        tag = f"[{i}/{len(ps)}]"
+        if p["type"] == "swap":
+            print(f"\n--- {tag} {p['weapon']} {p['owned']} -> {p['want']} ---")
+            r = cmd_swap(tree, wmap, p["weapon"], p["owned"], p["want"],
+                         stack=True, force=p.get("force", False))
+        else:
+            print(f"\n--- {tag} 手套 {p['owned']} -> {p['want']} ---")
+            r = cmd_glove(tree, p["owned"], p["want"],
+                          stack=True, force=p.get("force", False))
+        if not r:
+            ok = False
+            print(f"[!] 重放失败: {p}")
+    print(f"\n{'[+]' if ok else '[!]'} 重建完成: 刀 = {knife}, "
+          f"补丁 {'全部成功' if ok else '有失败项 (见上)'}")
+    return ok
 
 
 def cmd_weapons(tree, wmap):
@@ -577,7 +665,17 @@ def main():
     tree = km.load_ref_tree()
     tree_cache = tree
     wmap = build_map(tree)
-    if "--family" in args:
+    if "--rebuild" in args:
+        i = args.index("--rebuild")
+        if len(args) <= i + 1 or args[i + 1].startswith("--"):
+            print("[!] 用法: --rebuild <刀型>   (换刀 + 重放补丁清单, 见 --patches)")
+            sys.exit(1)
+        ok = cmd_rebuild(args[i + 1], "--force-inspect" in args,
+                         "--no-main" in args, "--no-inspect" in args)
+        sys.exit(0 if (ok and km.cmd_audit()) else 1)
+    elif "--patches" in args:
+        cmd_patches()
+    elif "--family" in args:
         i = args.index("--family")
         if len(args) < i + 2:
             print("[!] 用法: --family <kit名正则>   例: --family doppler")

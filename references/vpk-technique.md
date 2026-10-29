@@ -30,7 +30,9 @@
 | v7 | +13 个 vnmclip_c 指针换到蝴蝶 clip | 单段检视生效 |
 | v8 | +插入 2 个新 clip 条目（lookat02/03） | 无变化（逻辑不在 clip） |
 | v9 | +2 个检视图条目重指向蝴蝶专属图 | 三段检视生效（19 条目） |
-| knife_mod | 最小 4 条目（模型 T/CT + 检视图 T/CT） | 最终方案，树大小不变 |
+| knife_mod v1 | 最小 4 条目（模型 T/CT + 检视图 T/CT） | 树大小不变；但拔刀/手模仍是匕首（漏了主图槽） |
+| knife_mod v2 | +2 个主图槽条目（模型 2 + 主图 2 + 检视 2） | 变体体系刀型 6 条目，拔刀/手模/检视全对 |
+| knife_mod v3 | 独立完整图刀型去掉检视槽（模型 2 + 主图 2 = 4 条目） | 检视由完整图自管，补齐 OUTRO 收尾 |
 
 - v7 原因：检视动画从 default_t clip 集加载，默认 clip 骨架与蝴蝶不匹配；CT 刀没有自己的 viewmodel clips（与 T 共用一套）
 - v8 教训：检视段数/循环逻辑在**检视图 vnmgraph_c** 里，不在 clip
@@ -150,7 +152,7 @@ python skin_mod.py --audit                    # 审计
 |---|---|---|---|
 | 模型槽 | `vmdl_c:weapons/models/knife/knife_default_t\|ct/weapon_knife_default_*` | 外观几何、骨骼 | 看不见目标刀 |
 | **主图槽** | `vnmgraph_c:animation/graphs/viewmodel/viewmodel_knife.vnmgraph+default_t\|ct` | **idle / draw / attack / 手模姿势** | **拔刀动作和手臂还是匕首的** |
-| 检视槽 | `vnmgraph_c:animation/graphs/viewmodel/viewmodel_inspects.vnmgraph+knife_default_t\|ct` | 按 F 的检视玩法 | 播默认刀的检视 |
+| 检视槽 | `vnmgraph_c:animation/graphs/viewmodel/viewmodel_inspects.vnmgraph+knife_default_t\|ct` | 按 F 的检视玩法 | 播默认刀的检视（**独立完整图型例外**：它们是留空才对，见下节） |
 
 ### 为什么主图槽必须直接改（不能指望换模型自动带动作）
 
@@ -162,33 +164,56 @@ python skin_mod.py --audit                    # 审计
 
 | 刀型 | 主图槽该填 | 检视槽 |
 |---|---|---|
-| 16 把（bayonet/bowie/canis/cord/css/falchion/flip/gut/kukri/m9/navajo/outdoor/push/skeleton/stiletto/tactical/ursus） | 同名变体 `viewmodel_knife.vnmgraph+<刀名>`（7.8~8.1KB） | `viewmodel_inspects.vnmgraph+knife_<刀名>`（4.9~5.5KB） |
-| **karambit / butterfly / talon 三把** | **独立完整图 `viewmodel_knife_<刀名>`（8,249~8,335B）** | karambit/talon 有变体；**butterfly 没有** |
+| 16 把（bayonet/bowie/canis/cord/css/falchion/flip/gut/kukri/m9/navajo/outdoor/push/skeleton/stiletto/tactical/ursus） | 同名变体 `viewmodel_knife.vnmgraph+<刀名>`（7.8~8.1KB） | 填 `viewmodel_inspects.vnmgraph+knife_<刀名>`（4.9~5.5KB） |
+| **karambit / butterfly / talon 三把** | **独立完整图 `viewmodel_knife_<刀名>`（8,249~8,335B）** | **留空，由完整图自管** |
 
-`knife_mod.main_var_for()` 自动判定：优先同名变体，缺失退回完整图。
+`knife_mod.main_var_for()` 自动判定主图槽；`build_targets()` 在主图槽拿到"完整图"时自动留空检视槽。
 
-### 检视槽的硬规则：只能塞变体，绝不能塞完整图
+### 检视槽：两个方向相反、都会出错的填法
 
-这就是"检视播完不停止、连续重复触发好几次"的根因：
+检视在两套资源里各有一套状态机，把 A 放进 B 的槽位就会出对应症状：
 
-- 检视变体（约 4.9KB）只含一条 `lookat01` clip，与 default 变体 **97.7% 同构**
-- 完整图（约 8.3KB）是自包含状态机，与检视变体仅 **36.6%** 相似，且独有 `INSPECT_LOOP` / `BLOCK_INSPECT`，**没有 `INSPECTCANCEL`**
-- 负责"检视结束"的 `CANCEL` / `INSPECTCANCEL_USE_FIXUP_EXIT` / `INSPECT_USE_DRAW_VERSION` 只存在于 **inspects 体系**（`viewmodel_inspects` 15,020B 主图 + 其变体）
-- 把完整图塞进检视槽 = 它跑自己的循环、收不到外面发的取消事件 → 必然停不下来。这不是参数没调对，是**角色错位**
+| | 完整图 `viewmodel_knife_<刀名>`（8.3KB） | 检视变体 `+knife_<刀名>`（4.9KB） |
+|---|---|---|
+| 状态 | `INSPECT_LOOP` + **`OUTRO`** + `USE_FIXUP_VERSION`（butterfly 另有 `BLOCK_INSPECT`） | `INSPECT_USE_DRAW_VERSION` + `CANCEL` |
+| 流程 | 进检视 → 循环 → **收尾** → 回待机 | 播一次 → 直接取消 |
+| 归谁用 | 主图槽（自包含状态机） | 检视槽（被 `viewmodel_inspects` 15,020B 主图的查找表选中） |
 
-### butterfly 的解法（已实测通过）
+- **坑 A：完整图塞进检视槽** → 它跑自己的 `INSPECT_LOOP`，却收不到 inspects 体系的 `INSPECTCANCEL`，表现为**播完不停、连续重复触发好几次**。这是角色错位，不是参数问题
+- **坑 B：完整图型刀却填检视变体** → 检视被单段变体接管，**丢掉 `INSPECT_LOOP` 与 `OUTRO` 收尾**，表现为**"少一个检视动作"**。karambit 实测复现：填变体时流程不完整，留空后（完整图接管）流程完整
 
-蝴蝶刀没有 `viewmodel_inspects.vnmgraph+knife_butterfly`（全树确认），三段花式转刀 `lookat01/02/03_butterfly`（31K/33K/48K clip）全编在完整图里，拆不出来。正确做法：
+检视段数是资源事实，改不了（全树 `vnmclip_c` 统计）：
+
+| 段数 | 刀型 |
+|---|---|
+| 3 | butterfly（`lookat01/02/03_butterfly`） |
+| 2 | talon、skeleton、stiletto、ursus、canis、cord、outdoor、falchion 等 |
+| **1** | **karambit（`lookat01_karambit` 52,367B）**、bowie、gut、push、tactical、navaja、_default_knife |
+
+所以"爪子刀检视比蝴蝶刀少一段"是官方设计，不是改丢了。
+
+### 独立完整图刀型的解法（butterfly / karambit 已实测通过）
+
+蝴蝶刀没有 `viewmodel_inspects.vnmgraph+knife_butterfly`（全树确认），三段花式转刀 `lookat01/02/03_butterfly`（31K/33K/48K clip）全编在完整图里，拆不出来。爪子刀虽然有检视变体，但用变体反而丢收尾。两把刀的正确配置完全一致：
 
 ```
-主图槽 → viewmodel_knife_butterfly（8,335B 完整图）
-检视槽 → 完全不动（保持默认刀的 4.9KB 变体）
+主图槽 → viewmodel_knife_<刀名>（8.2~8.3KB 完整图）
+检视槽 → 留空（保持默认刀的 4.9KB 变体，不参与）
 ```
 
-完整图进主图槽后自带 `BLOCK_INSPECT`，检视由它自己管。实测：拔刀、手模、待机、检视全部正常。
+实测：butterfly 拔刀/手模/待机/检视全部正常（3 段转刀）；karambit 三层齐换后各项正常，检视流程完整。
 
-`--force-inspect`（把完整图强塞检视槽）只为观察多段转刀，必然循环，不是修法。
+`--force-inspect`（让检视变体强行接管）在完整图型刀上会丢收尾，只用于对照实验。
+`--no-inspect`（显式留空检视槽）在完整图型刀上已是默认；变体体系刀型用它会导致检视播默认刀的。
 `--no-main`（只换模型和检视）用于排查完整图端口契约不兼容——完整图原本挂顶层 `viewmodel`，改挂 `viewmodel_knife` 的变体槽属于跨父图移植，若出现视角模型消失/T-pose 就用这个开关退避。
+
+### 换刀会抹掉换肤补丁：清单 + `--rebuild`
+
+换刀 (`cmd_apply`) 的做法是**从原始备份整体重建** pak01_dir.vpk，因此所有 `--swap`/`--glove` 补丁全部丢失。手工逐条补 10 条命令极易遗漏。
+
+解法是补丁清单 `scripts/patches.json`：每次 `--swap`/`--glove` 成功提交后自动记录一条（键 = `类型 + 武器 + owned`，同槽位覆盖而非追加），`--rebuild <刀型>` 先换刀、再按清单逐条 `--stack` 重放、最后审计。
+
+注意清单用**原始备份的树**（`load_ref_tree`）解析资源位置：换刀只改指针不改数据，所以备份里的 pack/offset/len 描述始终有效，`_commit(stack=True)` 再以当前文件为 base 写入。
 
 ## 刀皮肤本地替换（实验：效果有限）
 

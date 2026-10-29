@@ -8,6 +8,7 @@
 csgo_config.json
 knife_mod_snapshot.json
 skin_mod_snapshot.json
+patches.json
 
 # 个人环境
 .vscode/
