@@ -23,7 +23,7 @@ CS2 武器皮肤本地替换工具 (paint kit 树条目重指向)
   python skin_mod.py --audit                # 审计当前状态
 
 注意: 与 knife_mod 共用同一份 pak01_dir.vpk 与原始备份, 补丁均从备份
-出发、互不叠加。进 VAC 官方对局前务必 --revert。
+出发、互不叠加。进官方对局前务必 --revert。
 """
 import struct, hashlib, sys, os, json, re
 import knife_mod as km

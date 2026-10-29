@@ -17,7 +17,7 @@ CS2 通用刀型替换工具 (可分发版)
   python knife_mod.py --audit         # 审计当前状态
   python knife_mod.py --audit butterfly   # 审计 + 源数据包全窗口校验
 
-警告: 修改后的文件不要带入 VAC 官方对局, 进官方局前先 --revert。
+警告: 进官方对局前先 --revert 还原; 单机 / 离线 / 社区服无此顾虑。
 """
 import struct, hashlib, sys, os, json, shutil, re
 
