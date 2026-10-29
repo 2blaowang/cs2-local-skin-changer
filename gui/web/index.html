@@ -165,7 +165,8 @@ async function boot() {
   $('#vrf-tag').className = 'tag' + (d.vrf ? '' : ' bad');
   renderState(d.state);
   renderWeapons(); renderKnives(); renderPatches();
-  if (S.weapons.length) selectWeapon(S.weapons[0].id);
+  const q = new URLSearchParams(location.search);
+  if (S.weapons.length) selectWeapon(q.get('w') || S.weapons[0].id, q.get('k'));
   log('已连接：' + d.state.csgo);
   if (!d.vrf) log('未安装 Source2Viewer-CLI，缩略图降级为色块。装法：python gui/setup_vrf.py');
 }
@@ -190,7 +191,7 @@ function renderWeapons() {
   }
 }
 
-async function selectWeapon(id) {
+async function selectWeapon(id, wantKit) {
   S.weapon = id; S.kit = null;
   document.querySelectorAll('.w').forEach(e => e.classList.toggle('on', e.dataset.id === id));
   $('#grid').innerHTML = '<div style="color:#5b6270;padding:20px">加载中…</div>';
@@ -199,8 +200,10 @@ async function selectWeapon(id) {
   $('#count').textContent = d.kits.length + ' 款';
   // 默认选中一款"能作为入口"的皮肤, 免得一进来就落在不可用的 composite 上
   if (d.kits.length) {
+    const forced = wantKit && d.kits.find(k => k.kit === wantKit);
     const keep = S.kit && d.kits.some(k => k.kit === S.kit.kit);
-    if (!keep) {
+    if (forced) selectKit(forced);
+    else if (!keep) {
       const pick = d.kits.find(k => k.entry && k.cn) || d.kits.find(k => k.entry) || d.kits[0];
       selectKit(pick);
     }
