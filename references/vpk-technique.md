@@ -129,7 +129,7 @@ v2 机制：引擎按路径加载 `ak47_default_color_psd_*` 时拿到的是血�
 ### skin_mod.py 用法
 
 ```
-python skin_mod.py --weapons                  # 列出可换肤武器 (36)
+python skin_mod.py --weapons                  # 列出可换肤武器 (34)
 python skin_mod.py --list ak47                # 列出该武器皮肤 (AK47 有 45)
 python skin_mod.py --skin ak47 gs_ak47_bloodsport --tex   # 血竞 (贴图模式)
 python skin_mod.py --skin m4a4 am_kimono_sunrise --tex --stack   # 叠加第二把

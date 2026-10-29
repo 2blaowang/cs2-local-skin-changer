@@ -1,22 +1,25 @@
-# CS2 本地视觉替换工具（换刀 + 换肤 + 换手套）
+# CS2本地换肤器
 
-四个功能，同一套 VPK 树条目重指向技术：
+换刀、换肤、换手套，三个功能共用同一套 VPK 树条目重指向技术。纯本地、可回滚、每次写盘后自动审计，不分发任何游戏资产。
 
 1. **换刀**：把默认刀（T/CT 双阵营）本地替换为任意 19 种原生刀型（蝴蝶刀、爪子刀、M9 刺刀等，原色外观）
 2. **换肤（整材质）**：真拥有任意一款皮肤时，把它整份换成另一款——引擎照常跑完整合成管线（蒙版裁剪/磨损/污渍/法线/paintseed），**官方级效果，只改 1~2 个条目**
 3. **换手套**：72 个手套皮肤按 7 个家族分组，同家族内互换
 4. **跨武器试探**（`--force`）：把刀的材质挂到枪上，比如 MP9 中枢 → 多普勒 / 蓝宝石 / 黑珍珠
 
-纯本地视觉修改，无网络行为，不分发任何游戏资产。
-
 - 一条命令切换 / 一键回滚 / 全量审计自检
 - 只重写 VPK 目录树条目指针：不碰 pak 数据包、不碰哈希数组、文件大小不变
 - 换刀**三层齐换**：模型（外观）+ 主图（拔刀/待机/攻击/手模）+ 检视（按 F），4~6 个条目指针
-- 换肤世界模型+第一人称同时生效
+- 换肤世界模型 + 第一人称同时生效
+- 图形界面与命令行共用同一份服务层，界面不碰二进制
 
-## 图形界面（原型）
+## 图形界面
 
-不想敲命令的话有个控制台，皮肤、贴图、刀型都能点着看：
+不想敲命令就用控制台，皮肤、贴图、刀型都能点着看。两个前端（浏览器 / 原生窗口）共用同一份服务层：
+
+![皮肤页](docs/preview.png)
+
+![刀型页](docs/preview-knives.png)
 
 ```powershell
 python gui/serve.py            # 网页版，零依赖，自动打开 http://127.0.0.1:8765（或双击 gui\run_web.bat）
@@ -30,8 +33,9 @@ gui\run_gui.bat                # 桌面版启动（或 python gui/app.py --shot 
 > 到随便一个 python —— 本机 PATH 里有 6 个 python，装的和跑的不是同一个就会报
 > `ModuleNotFoundError: No module named 'PySide6'`。
 
-- **皮肤页**：33 把武器 × 1100+ kit。左选枪 → 中间网格看检视图（游戏里库存那张）→ 右侧看图案本体原图，选入口皮肤一键换
-- **刀型页**：19 把原生刀，标明主图槽/检视槽类型，换刀自动重放皮肤补丁
+- **皮肤页**：34 把武器 × 1418 款皮肤（1122 legacy + 296 composite）。左选枪 → 中间网格看检视图（游戏里库存那张，可搜索）→ 右侧看图案本体原图，选好入口皮肤一键换
+- **刀型页**：19 把原生刀，标明主图槽/检视槽类型，换刀自动按 `patches.json` 重放已记录的换肤补丁
+- **底栏**：实时操作日志 + 补丁清单（点条目可单独移除）
 - 界面层不碰二进制：所有写操作仍由 `scripts/` 执行，每次操作后自动审计
 
 分层是刻意的：`gui/service.py` 不认识 Qt/浏览器，套一层 HTTP 就能换 Electron / Tauri / WPF 当外壳。详见 [gui/README.md](gui/README.md)。
@@ -50,7 +54,7 @@ python scripts/skin_mod.py --rebuild karambit   # 换刀 + 自动重放全部换
 python scripts/knife_mod.py --revert            # 还原默认刀
 
 # 换肤（首次使用共用 knife_mod --init 建的备份）
-python scripts/skin_mod.py --weapons                                  # 列出可换肤武器 (36)
+python scripts/skin_mod.py --weapons                                  # 列出可换肤武器 (34)
 python scripts/skin_mod.py --list ak47                                # 列出 AK47 可用皮肤（含 [legacy]/[composite] 标记）
 python scripts/skin_mod.py --family doppler                           # 按名字查同族皮肤（多普勒 / 宝石系 / 渐变 / 手套）
 python scripts/skin_mod.py --swap ak47 cu_ak47_mastery cu_ak_island_floral   # 精英之作 → 野荷（官方级）
@@ -119,6 +123,24 @@ python scripts/skin_mod.py --rebuild karambit   # 换刀 + 逐条重放 + 审计
 - **入口永远是 `vcompmat` 那一条**（`items_game` 的 `composite_material_path` 指向它）。目标文档内部用绝对路径引自己的 vmat 与贴图，所以跨形态时只改 1 条
 - **图标不变**：背包/检视 UI 是预烘焙的 panorama png，材质换了图标不会换
 
+### 为什么 composite 皮肤只能用 `--swap`
+
+两条路的差别不在"能不能改",而在**引擎在这一槽位跑不跑合成器**:
+
+| | `--skin` | `--swap` |
+|---|---|---|
+| 占用的槽位 | 武器的**默认涂装** | 你**已拥有**的皮肤槽 |
+| 引擎行为 | 直接渲染一份静态材质 | 按服务端下发的 `paintindex` 跑完整合成器 |
+| kit 需要提供 | `vmats/<kit>.vmat`（4 张已烘焙成品图） | vcompmat 节点图（合成"配方"） |
+| legacy | ✅ | ✅ |
+| composite | ❌ | ✅（同形态最稳） |
+
+composite 本地只有一份 vcompmat 节点图,里面是 albedo × mask1 × mask2 × 磨损的引用,
+必须由合成器按 `paintindex` / `paintseed` 算出来。而**合成器只在"服务端下发了
+paintindex 的物品槽位"启动**——默认涂装不是物品,拿不到 paintindex,塞节点图进去
+也没有人计算。所以 composite 皮肤只能占一个你已拥有的皮肤槽位,把它的配方换掉。
+`--skin` 撞到 composite 会直接提示改用 `--swap`,不会再报"未知组合"。
+
 ## 风险须知（必读）
 
 - **修改后的文件不要带入 VAC 官方对局**，进官方局前先 `--revert`（1 秒）。离线/社区服随意
@@ -148,25 +170,27 @@ python scripts/skin_mod.py --rebuild karambit   # 换刀 + 逐条重放 + 审计
 
 ```
 ├── README.md                     # 本文件
-├── SKILL.md                      # AI Agent 技能入口（ Trae/Claude 等 skill 规范）
-├── cs2-knife-skin-mod.zip        # 分发包（由 scripts/pack_release.py 按固定清单生成，勿手工改）
+├── SKILL.md                      # AI Agent 技能入口（Trae / Claude Code 等 skill 规范）
+├── cs2-local-skin-changer.zip    # 分发包（由 scripts/pack_release.py 按固定清单生成，勿手工改）
 ├── scripts/
 │   ├── knife_mod.py              # 换刀主工具（切换/审计/回滚/init）
-│   ├── skin_mod.py               # 换肤工具（整材质换肤 / 贴图模式 / 手套 / 同族查询）
+│   ├── skin_mod.py               # 换肤工具（整材质换肤 / 贴图模式 / 手套 / 同族查询 / 补丁重放）
 │   ├── diagnose_skin.py          # 皮肤资产完整度诊断（FULL / BROKEN 评级）
 │   ├── batch_random.py           # 批量随机换装（只从满铺贴图池挑选）
 │   ├── pack_release.py           # 生成/校验分发包（--check 逐字节比对源码）
 │   └── scan_workshop.py          # 创意工坊资产侦察（扫描订阅地图 VPK 模型清单）
 ├── gui/
+│   ├── service.py                # 纯 Python 服务层（界面与 CLI 之间的唯一桥梁）
 │   ├── serve.py                  # 本地 Web 界面服务端（标准库，零依赖）
 │   ├── app.py                    # PySide6 桌面版界面
-│   ├── service.py                # 纯 Python 服务层（界面与 CLI 之间的唯一桥梁）
 │   ├── thumbs.py                 # 缩略图：VRF 导出 vtex_c → PNG + 缓存
 │   ├── setup_vrf.py              # 下载/解压 Source2Viewer-CLI
 │   ├── setup_env.bat             # 建 .venv 并装桌面版依赖（GBK 编码）
 │   ├── run_gui.bat               # 桌面版双击启动
 │   ├── run_web.bat               # 网页版双击启动
-│   └── web/index.html            # Web 界面
+│   ├── README.md                 # 界面层实现说明与踩坑记录
+│   └── web/index.html            # Web 界面（单文件，原生 JS，无构建步骤）
+├── docs/                         # 界面截图（README 引用）
 └── references/
     └── vpk-technique.md          # VPK 格式、引擎校验机制、换肤形态规则、踩坑记录与逆向结论
 ```

@@ -1,4 +1,4 @@
-"""CS2 本地皮肤 / 刀型图形化控制台 (原型)
+"""CS2本地换肤器 · 图形化控制台
 
 界面只负责展示与输入; 一切写盘操作都走 service.py -> scripts/ 里
 已验证的 CLI 逻辑, 每个动作结束后自动审计。
@@ -94,7 +94,7 @@ def badge(text: str) -> QLabel:
 class Main(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("CS2 本地皮肤控制台 · 原型")
+        self.setWindowTitle("CS2本地换肤器")
         self.resize(1180, 780)
         self._jobs: list[Job] = []
         self._weapon = None

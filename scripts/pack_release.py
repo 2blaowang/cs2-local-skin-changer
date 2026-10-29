@@ -1,5 +1,5 @@
 """
-打包分发包 cs2-knife-skin-mod.zip
+打包分发包 cs2-local-skin-changer.zip
 =================================
 把脚本与文档按固定清单打成一个 zip, 避免手工重打包造成"分发包与源码不一致"
 (仓库里同时存在源码与 zip 时, 手工维护必然出现第二个真相来源)。
@@ -15,7 +15,7 @@ import sys
 import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ZIP_NAME = "cs2-knife-skin-mod.zip"
+ZIP_NAME = "cs2-local-skin-changer.zip"
 MEMBERS = [
     "scripts/knife_mod.py",
     "scripts/skin_mod.py",

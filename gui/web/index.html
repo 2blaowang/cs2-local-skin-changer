@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>CS2 本地皮肤控制台 · 原型</title>
+<title>CS2本地换肤器</title>
 <style>
   :root{
     --bg:#15171c; --panel:#1a1d23; --line:#272c35; --line2:#333a46;
@@ -88,7 +88,7 @@
 </head>
 <body>
 <header>
-  <strong style="font-size:13px">CS2 本地皮肤控制台</strong>
+  <strong style="font-size:13px">CS2本地换肤器</strong>
   <span class="path" id="path">加载中…</span>
   <span class="tag" id="state"></span>
   <button id="tab-skins" class="primary">皮肤</button>
@@ -287,14 +287,20 @@ function renderKnives() {
     const l = el('div'); l.append(el('div', 'kname', `${k.name}  (${k.id})`),
       el('div', 'kmeta', `主图槽 ${k.main} · 检视槽 ${k.inspect}`));
     d.appendChild(l);
-    d.onclick = () => {
-      S.knife = k;
-      document.querySelectorAll('.knife').forEach(e => e.classList.toggle('on', e.dataset.id === k.id));
-      $('#kn-desc').innerHTML = `<b>${k.name}</b> / ${k.id}<br>主图槽: ${k.main}<br>检视槽: ${k.inspect}`;
-      $('#btn-knife').disabled = false;
-    };
+    d.onclick = () => selectKnife(k);
     box.appendChild(d);
   }
+  // 进来就选中一把，否则右侧只有"这一把刀"占位、按钮状态不明
+  const keep = S.knife && S.knives.find(k => k.id === S.knife.id);
+  if (keep) selectKnife(keep);
+  else if (S.knives.length) selectKnife(S.knives[0]);
+}
+
+function selectKnife(k) {
+  S.knife = k;
+  document.querySelectorAll('.knife').forEach(e => e.classList.toggle('on', e.dataset.id === k.id));
+  $('#kn-desc').innerHTML = `<b>${k.name}</b> / ${k.id}<br>主图槽: ${k.main}<br>检视槽: ${k.inspect}`;
+  $('#btn-knife').disabled = false;
 }
 
 /* ---------------- 写操作 ---------------- */

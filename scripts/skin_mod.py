@@ -532,9 +532,17 @@ def cmd_rebuild(knife, force_inspect=False, no_main=False, no_inspect=False):
 
 
 def cmd_weapons(tree, wmap):
-    print(f"可换肤武器 ({len(wmap)}):")
-    for w in sorted(wmap):
-        print(f"  {w:<14} {len(wmap[w])} 个皮肤")
+    """武器清单: build_map 只收有 vmat 的 legacy kit, 纯 composite 武器会整把漏掉"""
+    kits = {w: set(v) for w, v in wmap.items()}
+    comp = {k.split("/")[-1] for k in tree if k.startswith(COMPMAT)}
+    for kit, ws in kit_weapon_map(tree).items():
+        if kit in comp:
+            for w in ws:
+                kits.setdefault(w, set()).add(kit)
+    print(f"可换肤武器 ({len(kits)}):")
+    for w in sorted(kits):
+        tag = "" if w in wmap else "  (全 composite, 只能 --swap)"
+        print(f"  {w:<14} {len(kits[w])} 个皮肤{tag}")
 
 
 def cmd_family(tree, pat):

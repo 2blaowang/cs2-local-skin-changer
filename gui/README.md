@@ -1,4 +1,4 @@
-# 图形界面（原型）
+# CS2本地换肤器 · 图形界面
 
 给 `scripts/` 下的 VPK 补丁工具套一层控制台。**界面不碰二进制**，所有写盘操作
 仍然由已经验证过的 CLI 逻辑执行，每次操作后自动跑审计。
@@ -66,7 +66,7 @@ python gui/setup_vrf.py            # 约 53MB
 
 | 页 | 内容 |
 |---|---|
-| 皮肤 | 左选武器（33 把）→ 中间 kit 网格（带检视图缩略图，可搜索）→ 右侧图案本体大图 + 入口选择 + 一键换肤 |
+| 皮肤 | 左选武器（34 把）→ 中间 kit 网格（1418 款，带检视图缩略图，可搜索）→ 右侧图案本体大图 + 入口选择 + 一键换肤 |
 | 刀型 | 19 把原生刀，标主图槽/检视槽类型，换刀自动按补丁清单重放 |
 | 底栏 | 实时操作日志 + 补丁清单（点条目可移除） |
 
@@ -107,7 +107,7 @@ python gui/setup_vrf.py            # 约 53MB
 ## 已知限制
 
 - 网格图是 light 尺寸的检视图，不是真 3D 预览；3D 要复刻 Source2 合成管线
-  （baseColor × mask1 × mask2 × 磨损），不在原型范围
+  （baseColor × mask1 × mask2 × 磨损），不在本期范围
 - composite 类 kit 的图案本体是**合成输入**（psd 元素层），直接看会显得"缺色"，
   真实效果要引擎把 mask/ao 也算进去
 - **composite 皮肤只能用"整材质换肤"**：它是节点图配方，得挂进一个**你已拥有的
@@ -117,4 +117,5 @@ python gui/setup_vrf.py            # 约 53MB
   下一步接 `steamcommunity.com/inventory/<steamid>/730/2`（要求库存公开），
   用 `market_hash_name` 的中文名反查 kit —— `service._name()` 已有映射能力；
   注意该接口不含多普勒阶段号，要精确 paintindex 得走 inspect link
-- 未做打包（PyInstaller）
+- 未做打包（PyInstaller / Nuitka）：目前靠 `.venv` + 启动 bat，省掉一份几十 MB 的
+  构建产物；真要做成单文件 exe 时，`service.py` 不依赖 Qt 这一点可以直接复用
