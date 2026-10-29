@@ -142,6 +142,54 @@ python skin_mod.py --audit                    # 审计
 
 与 knife_mod 共用同一份 pak01_dir.vpk 与原始备份；不带 `--stack` 的补丁从备份重建（互不叠加），`--revert` 同时还原刀和皮肤。
 
+## 换刀动画：三层槽位与 variationID 调度 ★
+
+换刀不是"换个模型"就完事。第一人称视角的全部行为由**三个互相独立的槽位**决定，缺哪层就出对应症状。这层认知是踩了两个坑之后才理清的。
+
+| 层 | 条目（t 和 ct 各一条） | 管什么 | 不换的症状 |
+|---|---|---|---|
+| 模型槽 | `vmdl_c:weapons/models/knife/knife_default_t\|ct/weapon_knife_default_*` | 外观几何、骨骼 | 看不见目标刀 |
+| **主图槽** | `vnmgraph_c:animation/graphs/viewmodel/viewmodel_knife.vnmgraph+default_t\|ct` | **idle / draw / attack / 手模姿势** | **拔刀动作和手臂还是匕首的** |
+| 检视槽 | `vnmgraph_c:animation/graphs/viewmodel/viewmodel_inspects.vnmgraph+knife_default_t\|ct` | 按 F 的检视玩法 | 播默认刀的检视 |
+
+### 为什么主图槽必须直接改（不能指望换模型自动带动作）
+
+顶层 `vnmgraph_c:animation/graphs/viewmodel/viewmodel`（20,821B）是总调度表，用 `referencedGraphSlot` + `m_variationID` + "Entry Overrides/ID Comparison" 按 variationID 选子图。中层 `viewmodel_knife`（8,504B）再列 19 个 `+<刀型>` 变体。
+
+**variationID 来自物品数据（服务端下发），树条目重指向改不了它。** 所以你的物品永远是"默认刀"，永远命中 `+default_ct` 那条变体——里面装的是匕首的状态机。换模型只会让几何变成目标刀，动作与手模仍归匕首。这就是"换了蝴蝶刀但拔刀还是匕首"的全部原因。
+
+### 两种资源布局（决定主图槽填什么）
+
+| 刀型 | 主图槽该填 | 检视槽 |
+|---|---|---|
+| 16 把（bayonet/bowie/canis/cord/css/falchion/flip/gut/kukri/m9/navajo/outdoor/push/skeleton/stiletto/tactical/ursus） | 同名变体 `viewmodel_knife.vnmgraph+<刀名>`（7.8~8.1KB） | `viewmodel_inspects.vnmgraph+knife_<刀名>`（4.9~5.5KB） |
+| **karambit / butterfly / talon 三把** | **独立完整图 `viewmodel_knife_<刀名>`（8,249~8,335B）** | karambit/talon 有变体；**butterfly 没有** |
+
+`knife_mod.main_var_for()` 自动判定：优先同名变体，缺失退回完整图。
+
+### 检视槽的硬规则：只能塞变体，绝不能塞完整图
+
+这就是"检视播完不停止、连续重复触发好几次"的根因：
+
+- 检视变体（约 4.9KB）只含一条 `lookat01` clip，与 default 变体 **97.7% 同构**
+- 完整图（约 8.3KB）是自包含状态机，与检视变体仅 **36.6%** 相似，且独有 `INSPECT_LOOP` / `BLOCK_INSPECT`，**没有 `INSPECTCANCEL`**
+- 负责"检视结束"的 `CANCEL` / `INSPECTCANCEL_USE_FIXUP_EXIT` / `INSPECT_USE_DRAW_VERSION` 只存在于 **inspects 体系**（`viewmodel_inspects` 15,020B 主图 + 其变体）
+- 把完整图塞进检视槽 = 它跑自己的循环、收不到外面发的取消事件 → 必然停不下来。这不是参数没调对，是**角色错位**
+
+### butterfly 的解法（已实测通过）
+
+蝴蝶刀没有 `viewmodel_inspects.vnmgraph+knife_butterfly`（全树确认），三段花式转刀 `lookat01/02/03_butterfly`（31K/33K/48K clip）全编在完整图里，拆不出来。正确做法：
+
+```
+主图槽 → viewmodel_knife_butterfly（8,335B 完整图）
+检视槽 → 完全不动（保持默认刀的 4.9KB 变体）
+```
+
+完整图进主图槽后自带 `BLOCK_INSPECT`，检视由它自己管。实测：拔刀、手模、待机、检视全部正常。
+
+`--force-inspect`（把完整图强塞检视槽）只为观察多段转刀，必然循环，不是修法。
+`--no-main`（只换模型和检视）用于排查完整图端口契约不兼容——完整图原本挂顶层 `viewmodel`，改挂 `viewmodel_knife` 的变体槽属于跨父图移植，若出现视角模型消失/T-pose 就用这个开关退避。
+
 ## 刀皮肤本地替换（实验：效果有限）
 
 刀与枪同源尝试，结论：

@@ -11,7 +11,8 @@
 
 - 一条命令切换 / 一键回滚 / 全量审计自检
 - 只重写 VPK 目录树条目指针：不碰 pak 数据包、不碰哈希数组、文件大小不变
-- 换刀含检视动画切换（含 CT 方正反握修复），换肤世界模型+第一人称同时生效
+- 换刀**三层齐换**：模型（外观）+ 主图（拔刀/待机/攻击/手模）+ 检视（按 F），4~6 个条目指针
+- 换肤世界模型+第一人称同时生效
 
 ## 快速上手
 
@@ -21,7 +22,8 @@
 # 换刀
 python scripts/knife_mod.py --init              # 首次使用：自动探测游戏路径 + 建原始备份
 python scripts/knife_mod.py --list              # 列出 19 种可用刀型
-python scripts/knife_mod.py --knife karambit    # 换成爪子刀（自动审计）
+python scripts/knife_mod.py --knife karambit    # 换成爪子刀（模型+主图+检视，自动审计）
+python scripts/knife_mod.py --knife butterfly   # 蝴蝶刀：主图槽给完整图，检视槽不动（已验证正常）
 python scripts/knife_mod.py --revert            # 还原默认刀
 
 # 换肤（首次使用共用 knife_mod --init 建的备份）
@@ -49,6 +51,23 @@ python scripts/knife_mod.py --audit             # 审计当前状态
 ```powershell
 python scripts/knife_mod.py --init --csgo "D:\Steam\steamapps\common\Counter-Strike Global Offensive\game\csgo"
 ```
+
+## 换刀的三层槽位（为什么有时"拔刀还是匕首动作"）
+
+换刀不是换模型就完事。第一人称的全部行为由三个互相独立的槽位决定：
+
+| 层 | 条目 | 管什么 | 不换的症状 |
+|---|---|---|---|
+| 模型槽 | `vmdl_c:.../knife_default_t\|ct` | 外观几何 | 看不见目标刀 |
+| **主图槽** | `viewmodel_knife.vnmgraph+default_t\|ct` | **idle / 拔刀 / 攻击 / 手模姿势** | **拔刀动作和手臂还是匕首的** |
+| 检视槽 | `viewmodel_inspects.vnmgraph+knife_default_t\|ct` | 按 F 的检视 | 播默认刀的检视 |
+
+主图槽必须直接改：顶层 `viewmodel` 按 `m_variationID` 选子图，而 variationID 来自物品数据，重指向改不了它，所以永远命中 `+default_ct` 那个装着匕首状态机的变体。
+
+- 16 把中小刀型：主图槽填同名变体 `viewmodel_knife.vnmgraph+<刀名>`，检视槽填 `viewmodel_inspects.vnmgraph+knife_<刀名>`
+- **karambit / butterfly / talon**：主图槽填独立完整图 `viewmodel_knife_<刀名>`；butterfly 没有检视变体，检视槽**完全不动**（完整图自带 `BLOCK_INSPECT` 自己管检视，已实测正常）
+- 检视槽**绝不能**塞完整图：完整图自带 `INSPECT_LOOP` 且没有 `INSPECTCANCEL` 退出口，会"播完不停、连续重复触发"。`--force-inspect` 仅供观察多段转刀，会循环
+- `--no-main`：只换模型与检视，用于排查完整图端口契约不兼容（视角模型消失/T-pose）
 
 ## 两种换肤流程怎么选
 

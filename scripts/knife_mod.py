@@ -30,6 +30,11 @@ MODEL_T = "vmdl_c:weapons/models/knife/knife_default_t/weapon_knife_default_t"
 MODEL_CT = "vmdl_c:weapons/models/knife/knife_default_ct/weapon_knife_default_ct"
 GRAPH_T = "vnmgraph_c:animation/graphs/viewmodel/viewmodel_inspects.vnmgraph+knife_default_t"
 GRAPH_CT = "vnmgraph_c:animation/graphs/viewmodel/viewmodel_inspects.vnmgraph+knife_default_ct"
+# 主图槽: 顶层 viewmodel(20.8KB) 按 variationID 选子图, 槽位名固定是刀型的变体名。
+# 换模型指针不会改 variationID, 所以 idle/draw/attack/手模 全由这里决定 —— 不改就还是匕首。
+MAIN_T = "vnmgraph_c:animation/graphs/viewmodel/viewmodel_knife.vnmgraph+default_t"
+MAIN_CT = "vnmgraph_c:animation/graphs/viewmodel/viewmodel_knife.vnmgraph+default_ct"
+VMDOM = "vnmgraph_c:animation/graphs/viewmodel/"
 KNOWN = {  # 展示名 -> 树内刀名 (weapons/models/knife/<名>/)
     "bayonet": "刺刀", "bowie": "鲍伊", "butterfly": "蝴蝶", "canis": "Canis",
     "cord": "皮带", "css": "经典(复刻)", "falchion": "弯刀", "flip": "折叠",
@@ -176,32 +181,76 @@ def load_orig_tree():
     return parse_tree(open(BAK_DIR, "rb").read())
 
 
+def main_var_for(tree, k):
+    """主图槽该指向哪张图 -> (条目, 类型)
+
+    19 把中小刀型走变体体系: viewmodel_knife.vnmgraph+<刀名> (约 8KB 完整子图)
+    3 把独立刀型 (butterfly/karambit/talon) 没有变体, 只有独立完整图
+    viewmodel_knife_<刀名> —— 它同时被顶层 viewmodel 直接引用, 是自包含状态机,
+    自带 INSPECT_LOOP, 正好该待在主图槽里。
+    """
+    var = f"{VMDOM}viewmodel_knife.vnmgraph+{k}"
+    if var in tree:
+        return var, "变体"
+    full = f"{VMDOM}viewmodel_knife_{k}"
+    if full in tree:
+        return full, "完整图"
+    return None, None
+
+
 def discover_knives(tree):
-    """从树发现全部刀型: 模型条目 + 检视图(专属或inspects变体)"""
+    """从树发现全部刀型: 模型条目 + 检视槽用图 + 主图槽用图
+
+    检视槽里塞的必须是「inspects 变体」(约 4.9KB, 只有一条 lookat clip,
+    97.7% 同构), 不能是「专属完整图」(约 8.3KB, 自带 INSPECT_LOOP 循环
+    状态且没有 INSPECTCANCEL 退出路径)。把完整图塞进检视槽会让检视播完
+    不停止、连续重复触发。变体缺失时才退回完整图, 并用 heavy 标记提示。
+
+    主图槽才是 idle/draw/attack/手模 的归属, 必须单独换, 见 main_var_for。
+    """
     knives = {}
     for k, disp in KNOWN.items():
         model = f"vmdl_c:weapons/models/knife/knife_{k}/weapon_knife_{k}"
         if model not in tree:
             continue
-        dedicated = f"vnmgraph_c:animation/graphs/viewmodel/viewmodel_knife_{k}"
-        variant = f"vnmgraph_c:animation/graphs/viewmodel/viewmodel_inspects.vnmgraph+knife_{k}"
-        graph = dedicated if dedicated in tree else (variant if variant in tree else None)
+        dedicated = f"{VMDOM}viewmodel_knife_{k}"
+        variant = f"{VMDOM}viewmodel_inspects.vnmgraph+knife_{k}"
+        graph = variant if variant in tree else (dedicated if dedicated in tree else None)
         if graph:
             knives[k] = (model, graph, disp)
     return knives
 
 
-def build_targets(orig_tree, knife):
+def build_targets(orig_tree, knife, force_inspect=False, no_main=False):
+    """要重指向的条目 -> (pack, offset, len, crc)
+
+    三条槽位, 各管一件事, 缺一条就出对应症状:
+      模型槽  MODEL_*  外观几何 (换了它 = 看见另一把刀)
+      主图槽  MAIN_*   idle/draw/attack + 手模 (不换 = 拔刀动作和手臂还是匕首的)
+      检视槽  GRAPH_*  按 F 的检视玩法 (不换 = 播默认刀的检视)
+
+    主图槽默认跟模型一起换; 若新图在游戏里表现异常, 加 --no-main 只换模型和检视。
+    检视槽只在「有 inspects 变体」或显式 force_inspect 时才写 —— 没有变体的刀
+    (butterfly) 把 8.3KB 完整图塞进 4.9KB 变体槽会进 INSPECT_LOOP 且无退出路径。
+    """
     knives = discover_knives(orig_tree)
     if knife not in knives:
         print(f"[!] 未知刀型: {knife}\n可用: {', '.join(sorted(knives))}"); sys.exit(1)
     model, graph, _ = knives[knife]
     m = orig_tree[model]
-    g = orig_tree[graph]
-    return {MODEL_T: (m[3], m[4], m[5], m[1]),
-            MODEL_CT: (m[3], m[4], m[5], m[1]),
-            GRAPH_T:  (g[3], g[4], g[5], g[1]),
-            GRAPH_CT: (g[3], g[4], g[5], g[1])}
+    out = {MODEL_T: (m[3], m[4], m[5], m[1]),
+           MODEL_CT: (m[3], m[4], m[5], m[1])}
+    if not no_main:
+        mv, _kind = main_var_for(orig_tree, knife)
+        if mv:
+            e = orig_tree[mv]
+            out[MAIN_T] = (e[3], e[4], e[5], e[1])
+            out[MAIN_CT] = (e[3], e[4], e[5], e[1])
+    if "inspects" in graph or force_inspect:
+        g = orig_tree[graph]
+        out[GRAPH_T] = (g[3], g[4], g[5], g[1])
+        out[GRAPH_CT] = (g[3], g[4], g[5], g[1])
+    return out
 
 
 def cmd_list():
@@ -210,14 +259,18 @@ def cmd_list():
     print(f"可用刀型 ({len(knives)}):")
     for k in sorted(knives):
         model, graph, disp = knives[k]
-        gtype = "专属检视图" if "inspects" not in graph else "inspects变体"
-        print(f"  --knife {k:<10} {disp}  ({gtype})")
+        _mv, mkind = main_var_for(tree, k)
+        if "inspects" in graph:
+            gtype = "检视变体 OK"
+        else:
+            gtype = "[!] 无检视变体 (检视沿用默认刀)"
+        print(f"  --knife {k:<10} {disp:<8} 主图槽={mkind or '缺失':<6} {gtype}")
 
 
-def cmd_apply(knife):
+def cmd_apply(knife, force_inspect=False, no_main=False):
     orig = open(BAK_DIR, "rb").read()
     orig_tree = parse_tree(orig)
-    targets = build_targets(orig_tree, knife)
+    targets = build_targets(orig_tree, knife, force_inspect, no_main)
     cur = bytearray(orig)
     for t, (a, o, l, c) in targets.items():
         foff = orig_tree[t][0]
@@ -229,7 +282,13 @@ def cmd_apply(knife):
         f.write(data)
         f.flush()
         os.fsync(f.fileno())
-    print(f"[+] 已替换为 {knife} (4 个条目指针 + other_md5 重算)")
+    mv, mkind = main_var_for(orig_tree, knife)
+    parts = []
+    parts.append(f"主图槽→{mkind}" if MAIN_T in targets else "主图槽未动")
+    parts.append("检视槽→" + ("变体" if GRAPH_T in targets else "未动"))
+    print(f"[+] 已替换为 {knife} ({len(targets)} 个条目指针 + other_md5 重算)  " + ", ".join(parts))
+    if mv:
+        print(f"    主图: {mv.split('/')[-1]}  {orig_tree[mv][5]}B")
 
 
 def cmd_revert():
@@ -269,7 +328,7 @@ def audit_pack(path, pack_id, harr):
     return ok
 
 
-def cmd_audit(knife=None):
+def cmd_audit(knife=None, force_inspect=False, no_main=False):
     print("========== 审计 ==========")
     ok = True
     cur = read_dir()
@@ -286,17 +345,27 @@ def cmd_audit(knife=None):
     diffs = [i for i in range(min(len(orig), len(cur))) if orig[i] != cur[i]]
     tree_size = struct.unpack_from("<I", cur, 8)[0]
     h0 = 28 + tree_size
-    in_tree = all(d < h0 for d in diffs)
+    om0 = len(orig) - SIG_BLOCK - 48       # other_md5 区起点, 重指向后必须随之更新
+    in_tree = all(d < h0 or d >= om0 for d in diffs)
     in_entry = True
+    extra = ""
     if knife:
-        targets = build_targets(orig_tree, knife)
+        targets = build_targets(orig_tree, knife, force_inspect, no_main)
         expect = set()
         for t in targets:
             foff = orig_tree[t][0]
             expect.update(range(foff, foff + 16))
         expect.update(range(len(orig) - SIG_BLOCK - 48, len(orig) - SIG_BLOCK))  # other_md5
-        in_entry = set(diffs) <= expect
-    print(f"{'[+]' if in_tree and in_entry else '[!]'} 差异 {len(diffs)}B 全部位于允许区域: {in_tree and in_entry}")
+        if set(diffs) <= expect:
+            in_entry = True
+        elif in_tree:
+            # 盘上还叠着别的补丁（如 skin_mod 的换肤），条目级严格比对不再适用:
+            # 差异确实全在树区, 只是不止换刀这几条。降级为区域校验并说明。
+            extra = f"  (叠加了其他补丁: 多出 {len(set(diffs) - expect)}B 落在其他树条目内)"
+            in_entry = True
+        else:
+            in_entry = False
+    print(f"{'[+]' if in_tree and in_entry else '[!]'} 差异 {len(diffs)}B 全部位于允许区域: {in_tree and in_entry}{extra}")
     ok &= in_tree and in_entry
     # 大小相同则直接切片比较哈希数组+签名块
     if len(orig) == len(cur):
@@ -310,7 +379,7 @@ def cmd_audit(knife=None):
     ok &= good
     # 涉及的 pack 全窗口审计
     packs = set()
-    src = build_targets(orig_tree, knife) if knife else {}
+    src = build_targets(orig_tree, knife, force_inspect, no_main) if knife else {}
     for t in (src or {}).values():
         packs.add(t[0])
     if packs:
@@ -344,12 +413,14 @@ if __name__ == "__main__":
         sys.exit(0 if cmd_audit() else 1)
     elif "--audit" in args:
         k = args[args.index("--audit") + 1] if len(args) > args.index("--audit") + 1 and not args[args.index("--audit") + 1].startswith("--") else None
-        sys.exit(0 if cmd_audit(k) else 1)
+        sys.exit(0 if cmd_audit(k, "--force-inspect" in args, "--no-main" in args) else 1)
     elif "--knife" in args:
         i = args.index("--knife")
         if len(args) <= i + 1 or args[i + 1].startswith("--"):
             print("[!] --knife 需要刀型名, 见 --list"); sys.exit(1)
-        cmd_apply(args[i + 1])
-        sys.exit(0 if cmd_audit(args[i + 1]) else 1)
+        fi = "--force-inspect" in args
+        nm = "--no-main" in args
+        cmd_apply(args[i + 1], fi, nm)
+        sys.exit(0 if cmd_audit(args[i + 1], fi, nm) else 1)
     else:
         print(__doc__)
