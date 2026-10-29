@@ -116,8 +116,61 @@ def _clean_cn(v: str | None) -> str:
     return v
 
 
+_BAG_CACHE: dict = {}
+_WEAPON_TOKENS: set[str] = set()
+
+
+def _bag(table: dict) -> dict:
+    """按"词袋"建索引, 用来吃掉词序差异 (建一次缓存, 1418 个 kit 每次都重建太慢)
+
+    材质目录和本地化键经常不是同一个顺序: 目录 `cu_rubber_ak47` 在表里是
+    `cu_ak47_rubber`(火神), 目录 `sp_tape_short_sand` 在表里是
+    `sp_short_tape_sand`(沙漠虚线)。纯靠精确匹配会漏掉几十个。
+    """
+    if not _BAG_CACHE:
+        for k, v in table.items():
+            _BAG_CACHE.setdefault(tuple(sorted(k.split("_"))), v)
+    return _BAG_CACHE
+
+
+def _weapon_tokens() -> set[str]:
+    """全部武器目录名拆出来的词, 用于剥掉目录里多余的那段武器名"""
+    if not _WEAPON_TOKENS:
+        for w in weapon_map():
+            for t in w.split("_"):
+                if len(t) > 2:
+                    _WEAPON_TOKENS.add(t)
+    return _WEAPON_TOKENS
+
+
 def _name(tree, kit: str) -> str:
-    return _clean_cn(sm.cn_names(tree).get(kit)) or sm.COMMON.get(kit, "")
+    """kit -> 中文名, 逐级回落到内置常用表
+
+    1. 精确命中 (已统一小写)
+    2. 词袋命中 → 解决词序不同
+    3. 剥掉武器词再查 → 解决目录带武器后缀而表里没有
+    4. 内置 COMMON 表; 都不中返回空, 调用方显示 kit 原名
+    """
+    cn = sm.cn_names(tree)
+    toks = kit.split("_")
+
+    v = _clean_cn(cn.get(kit))
+    if v:
+        return v
+
+    bag = _bag(cn)
+    v = _clean_cn(bag.get(tuple(sorted(toks))))
+    if v:
+        return v
+
+    wt = _weapon_tokens()
+    stem = [t for t in toks if t not in wt]
+    if stem and len(stem) < len(toks):
+        v = _clean_cn(bag.get(tuple(sorted(stem))))
+        if v:
+            return v
+
+    return sm.COMMON.get(kit, "")
 
 
 def weapons() -> list[dict]:
@@ -128,7 +181,6 @@ def weapons() -> list[dict]:
 def kits(weapon: str) -> list[dict]:
     """某武器的全部皮肤, 带中文名 / 形态 / style / 能否作为换肤入口"""
     tree = _tree()
-    cn = sm.cn_names(tree)
     st = sm.kit_style(tree)
     out = []
     for kit in weapon_map().get(weapon, {}):
@@ -136,7 +188,7 @@ def kits(weapon: str) -> list[dict]:
         style, _cp = st.get(kit, ("?", None))
         out.append({
             "kit": kit,
-            "cn": _clean_cn(cn.get(kit)) or sm.COMMON.get(kit, ""),
+            "cn": _name(tree, kit),
             "form": sm.form_of(tree, kit),
             "style": style,
             "entry": has_entry,

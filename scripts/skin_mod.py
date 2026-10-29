@@ -307,8 +307,10 @@ def cn_names(tree):
         with open(os.path.join(km.CSGO, f"pak01_{e[3]:03d}.vpk"), "rb") as f:
             f.seek(e[4])
             t = f.read(e[5]).decode("utf-8", "replace")
-        for m in re.finditer(r'"PaintKit_([A-Za-z0-9_]+?)_tag"\s+"([^"]*)"', t, re.I):
-            out[m.group(1)] = m.group(2)
+        # 本地化键用的是官方大小写 (cu_AK47_Anarchy), 而材质路径全小写,
+        # 统一按小写存, 否则精确匹配会漏掉一大片
+        for m in re.finditer(r'"PaintKit_([A-Za-z0-9_\-]+?)_tag"\s+"([^"]*)"', t, re.I):
+            out[m.group(1).lower()] = m.group(2)
     cn_names._cache = out
     return out
 

@@ -19,10 +19,16 @@
 不想敲命令的话有个控制台，皮肤、贴图、刀型都能点着看：
 
 ```powershell
-python gui/serve.py            # 零依赖，自动打开 http://127.0.0.1:8765
+python gui/serve.py            # 网页版，零依赖，自动打开 http://127.0.0.1:8765（或双击 gui\run_web.bat）
 python gui/setup_vrf.py        # 可选但强烈建议：装缩略图引擎（约 53MB），皮肤网格才有真图
-python gui/app.py              # 桌面版，需先 pip install pyside6-essentials
+
+gui\setup_env.bat              # 桌面版：建 .venv 并装 PySide6（一次即可）
+gui\run_gui.bat                # 桌面版启动（或 python gui/app.py --shot out.png 自检截图）
 ```
+
+> 桌面版依赖装在项目本地 `.venv` 里，启动脚本优先用它。**不要**直接 `pip install`
+> 到随便一个 python —— 本机 PATH 里有 6 个 python，装的和跑的不是同一个就会报
+> `ModuleNotFoundError: No module named 'PySide6'`。
 
 - **皮肤页**：33 把武器 × 1100+ kit。左选枪 → 中间网格看检视图（游戏里库存那张）→ 右侧看图案本体原图，选入口皮肤一键换
 - **刀型页**：19 把原生刀，标明主图槽/检视槽类型，换刀自动重放皮肤补丁
@@ -157,6 +163,9 @@ python scripts/skin_mod.py --rebuild karambit   # 换刀 + 逐条重放 + 审计
 │   ├── service.py                # 纯 Python 服务层（界面与 CLI 之间的唯一桥梁）
 │   ├── thumbs.py                 # 缩略图：VRF 导出 vtex_c → PNG + 缓存
 │   ├── setup_vrf.py              # 下载/解压 Source2Viewer-CLI
+│   ├── setup_env.bat             # 建 .venv 并装桌面版依赖（GBK 编码）
+│   ├── run_gui.bat               # 桌面版双击启动
+│   ├── run_web.bat               # 网页版双击启动
 │   └── web/index.html            # Web 界面
 └── references/
     └── vpk-technique.md          # VPK 格式、引擎校验机制、换肤形态规则、踩坑记录与逆向结论

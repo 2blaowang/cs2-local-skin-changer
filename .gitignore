@@ -15,5 +15,8 @@ patches.json
 .idea/
 __pycache__/
 
+# 项目本地虚拟环境 (桌面版依赖装在这里, 不进仓库)
+.venv/
+
 # GUI 运行时缓存: VRF 导出器二进制 + 贴图缩略图, 都是本机可再生的大文件
 .cache/

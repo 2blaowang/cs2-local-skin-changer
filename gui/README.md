@@ -13,7 +13,9 @@ gui/
 ├── web/index.html   Web 界面（单文件，原生 JS，无构建步骤）
 ├── app.py           PySide6 桌面版界面
 ├── setup_vrf.py     一键下载/解压 Source2Viewer-CLI
-└── run_gui.bat      桌面版双击启动
+├── setup_env.bat    创建 .venv 并装桌面版依赖
+├── run_gui.bat      桌面版双击启动（优先用 .venv）
+└── run_web.bat      网页版双击启动（零依赖）
 ```
 
 两个前端共用同一个 `service.py`，所以不是二选一的重写，而是同一份逻辑的两个壳：
@@ -30,11 +32,12 @@ app.py (Qt) ─────┘      （唯一写盘者，逻辑零改动）
 ## 运行
 
 ```bash
-# ① Web 版：零依赖，装不了框架也能跑
+# ① 网页版：零依赖，任何 python 3.9+ 都能跑
 python gui/serve.py                # 自动打开 http://127.0.0.1:8765
+                                   # 或双击 gui/run_web.bat
 
-# ② 桌面版：原生窗口
-python -m pip install pyside6-essentials
+# ② 桌面版：需要 PySide6，建议装在项目本地 .venv 里
+gui\setup_env.bat                  # 建 .venv + 装 pyside6-essentials（一次即可）
 python gui/app.py                  # 或双击 gui/run_gui.bat
 python gui/app.py --shot out.png   # 自检：等首屏加载完截图后退出
 
@@ -44,8 +47,20 @@ python gui/setup_vrf.py            # 约 53MB
 
 前提：已跑过 `python scripts/knife_mod.py --init`（要有 `pak01_dir.vpk.bak_v6` 备份）。
 
-> 装 PySide6 时如果卡在 82MB 的 wheel 上下不动（官方源常见），换镜像：
-> `python -m pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ pyside6-essentials`
+### 为什么一定要用 `.venv`
+
+本机 PATH 里有 6 个 python（3.10 / 3.12 / 3.13 / Espressif / miniconda / scoop），
+`python` 命中的是 **3.10**。如果直接把包装进"另一个 python"，双击 bat 时必然报
+`ModuleNotFoundError: No module named 'PySide6'` —— 装的和跑的不是同一个解释器。
+
+所以 `run_gui.bat` / `run_web.bat` 都是**先找 `.venv\Scripts\python.exe`**，
+找不到才退回 PATH 里的 `python`；`setup_env.bat` 负责把依赖固定进 `.venv`。
+
+> `run_gui.bat` 里的中文必须存成 **GBK**：cmd 按本地代码页解析批处理文件，
+> UTF-8 的中文会被拆坏，出现 `'env.bat' 不是内部或外部命令` 这类诡异报错。
+
+> pip 从官方源下载 82MB 的 pyside6-essentials 常常卡在 1.3MB 不动（清华镜像还会
+> 报 "no versions"）。`setup_env.bat` 默认走阿里云镜像，几秒完成。
 
 ## 界面
 
@@ -70,8 +85,14 @@ python gui/setup_vrf.py            # 约 53MB
   `-f <前缀>` 批量导出后按路径映射回 kit
 - **导出文件名 = VPK 路径 + `.png`**，所以缓存路径可以完全由 vtex 路径推出，
   不需要额外索引文件
-- **中文名有三种脏数据**：空、`PaintKit_xxx`（值是另一个键）、`#Token`，
-  必须清洗后回落到内置常用表，否则界面上会出现 `PaintKit_cu_bizon_citizen`
+- **中文名有四种脏数据**，任何一条没处理都会在界面上露出 `PaintKit_cu_bizon_citizen`：
+  1. 值是**另一个键**或 `#Token` → 清洗后回落内置表
+  2. 键里**带连字符**（`PaintKit_cu_ak-47_phantom_disruptor_tag`）→ 正则要允许 `-`
+  3. 本地化键用**官方大小写**（`cu_AK47_Anarchy`）而材质路径全小写 → 统一小写存
+  4. **词序不同 / 目录多带武器名**（`cu_rubber_ak47` vs 表里 `cu_ak47_rubber` 火神，
+     `ht_poly_camo_ak47` vs 表里 `ht_poly_camo`）→ 词袋匹配 + 剥武器词
+  修完覆盖率 88.6% → 93.5%；剩下 6.5% 是两份语言表里都没有 `_tag` 的废弃 kit，
+  界面显示 kit 原名（图标仍可辨认），不必再追
 - **检视图路径不能拼**：M4A4 在 panorama 里叫 `m4a1`，拼 `weapon_m4a4` 会 0 命中；
   必须按"最长 UI 名前缀"从树里反解（`service._icon_index()`），且**绝不整目录兜底**
   —— `default_generated` 有 6000+ 张几百 MB，误触发就是几分钟白等

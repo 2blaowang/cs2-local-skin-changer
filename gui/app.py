@@ -11,14 +11,25 @@ import os
 import sys
 import traceback
 
-from PySide6.QtCore import QSize, Qt, QThread, Signal
-from PySide6.QtGui import QColor, QIcon, QPixmap
-from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel,
-    QListWidget, QListWidgetItem, QListView, QMainWindow, QMessageBox,
-    QPlainTextEdit, QPushButton, QSizePolicy, QSplitter, QTabWidget,
-    QVBoxLayout, QWidget,
-)
+try:
+    from PySide6.QtCore import QSize, Qt, QThread, Signal
+    from PySide6.QtGui import QColor, QIcon, QPixmap
+    from PySide6.QtWidgets import (
+        QApplication, QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel,
+        QListWidget, QListWidgetItem, QListView, QMainWindow, QMessageBox,
+        QPlainTextEdit, QPushButton, QSizePolicy, QSplitter, QTabWidget,
+        QVBoxLayout, QWidget,
+    )
+except ImportError:
+    # 最常见的坑: pip 装进了 A 解释器, 运行时用 B 解释器, 报的是一行看不懂的 traceback。
+    # 这里直接说清楚"是谁缺、该往哪装"。
+    print("[缺少依赖] 当前解释器没有 PySide6:\n    " + sys.executable)
+    print("\n装到同一个解释器里:")
+    print('    "' + sys.executable + '" -m pip install '
+          "-i https://mirrors.aliyun.com/pypi/simple/ pyside6-essentials pillow")
+    print("\n或者双击 gui/setup_env.bat 建本地 .venv（推荐，不污染全局）。")
+    print("只想先用网页版：双击 gui/run_web.bat（零依赖，不需要 PySide6）。")
+    sys.exit(1)
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import service  # noqa: E402
