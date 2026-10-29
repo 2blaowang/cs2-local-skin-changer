@@ -35,8 +35,9 @@ def _dir_vpk() -> str:
 def _weapon_kits_payload(weapon: str) -> dict:
     kits = service.kits(weapon)
     for k in kits:
-        f = thumbs.icon(weapon, k["kit"])
-        k["icon"] = f"/thumbs/{os.path.relpath(f, thumbs.CACHE).replace(os.sep, '/')}" if f else None
+        rel = service.icon_rel(weapon, k["kit"])
+        done = bool(rel) and os.path.exists(thumbs.png_path(rel))
+        k["icon"] = f"/thumbs/{rel}.png" if done else None
     return {"weapon": weapon, "kits": kits}
 
 
@@ -78,7 +79,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             body = self._body()
             if u.path == "/api/export_icons":
-                ok, msg = thumbs.ensure_icons(body["weapon"], _dir_vpk())
+                ok, msg = thumbs.ensure_icons(service.icon_prefixes(body["weapon"]), _dir_vpk())
                 return self._json({"ok": ok, "msg": msg, **_weapon_kits_payload(body["weapon"])})
             if u.path == "/api/export_tex":
                 tex = body["path"]

@@ -190,10 +190,48 @@ def paint_tex(kit: str) -> str | None:
     return best
 
 
+def _icon_index() -> dict:
+    """(武器目录名, kit, 尺寸) -> (vtex 相对路径, 检视图里的 UI 武器名)
+
+    不能简单拼 `weapon_{武器}_{kit}`: M4A4 在 panorama 里叫 m4a1
+    (ALIAS 表), 拼错就会 0 命中, 进而触发整目录兜底导出。这里按
+    "最长 UI 名前缀" 反解, 和 skin_mod.kit_weapon_map 同一套规则。
+    """
+    if "icon_index" in _cache:
+        return _cache["icon_index"]
+    tree = _tree()
+    names = set(sm.weapon_dirs(tree)) | set(sm.ALIAS) | set(sm.ALIAS.values())
+    idx = {}
+    for k in tree:
+        m = sm.RE_PNG.match(k)
+        if not m:
+            continue
+        rest, size = m.group(1), m.group(2)
+        ui = max((w for w in names if rest.startswith(w + "_")), key=len, default=None)
+        if not ui:
+            continue
+        kit = rest[len(ui) + 1:]
+        idx.setdefault((sm.ALIAS.get(ui, ui), kit, size),
+                       (k.split(":", 1)[1], ui))
+    _cache["icon_index"] = idx
+    return idx
+
+
+def icon_rel(weapon: str, kit: str, size: str = "light") -> str | None:
+    """kit 检视图在 VPK 里的相对路径 (thumbs 用它算缓存文件位置)"""
+    hit = _icon_index().get((weapon, kit, size))
+    return hit[0] if hit else None
+
+
 def icon_key(weapon: str, kit: str, size: str = "light") -> str | None:
-    """库存/检视 UI 那张小图的 vtex 路径 (游戏预烘焙的成品图)"""
-    key = f"vtex_c:panorama/images/econ/default_generated/weapon_{weapon}_{kit}_{size}_png"
-    return key if key in _tree() else None
+    rel = icon_rel(weapon, kit, size)
+    return f"vtex_c:{rel}" if rel else None
+
+
+def icon_prefixes(weapon: str, size: str = "light") -> list[str]:
+    """该武器在检视图里用到的全部 UI 名 (M4A4 -> m4a1), 供批量导出用"""
+    return sorted({ui for (w, _k, s), (_p, ui) in _icon_index().items()
+                   if w == weapon and s == size})
 
 
 def knives() -> list[dict]:

@@ -340,13 +340,13 @@ class Main(QMainWindow):
             return
         missing = [self.kit_list.item(i).data(Qt.UserRole)["kit"]
                    for i in range(self.kit_list.count())
-                   if not thumbs.icon(weapon, self.kit_list.item(i).data(Qt.UserRole)["kit"])]
+                   if not _cached_icon(weapon, self.kit_list.item(i).data(Qt.UserRole)["kit"])]
         if not missing:
             return
         self._icon_ticket += 1
         ticket = self._icon_ticket
         self.log(f"{weapon}: 导出 {len(missing)} 张检视图…")
-        job = Job(thumbs.ensure_icons, weapon, _dir_vpk())
+        job = Job(thumbs.ensure_icons, service.icon_prefixes(weapon), _dir_vpk())
 
         def done(_res):
             if ticket != self._icon_ticket or weapon != self._weapon:
@@ -362,7 +362,7 @@ class Main(QMainWindow):
         for i in range(self.kit_list.count()):
             it = self.kit_list.item(i)
             k = it.data(Qt.UserRole)
-            f = thumbs.icon(weapon, k["kit"])
+            f = _cached_icon(weapon, k["kit"])
             if f:
                 it.setIcon(QIcon(f))
                 n += 1
@@ -549,6 +549,15 @@ class Main(QMainWindow):
         self._jobs = [j for j in self._jobs if j.isRunning()]
         self._jobs.append(job)
         job.start()
+
+
+def _cached_icon(weapon: str, kit: str) -> str | None:
+    """检视图按 UI 名反解 (M4A4→m4a1), 路径由 service 给, 这里只判断有没有"""
+    rel = service.icon_rel(weapon, kit)
+    if not rel:
+        return None
+    f = thumbs.png_path(rel)
+    return f if os.path.exists(f) else None
 
 
 def _dir_vpk() -> str:

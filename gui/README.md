@@ -68,6 +68,9 @@ python gui/setup_vrf.py            # 约 53MB
   不需要额外索引文件
 - **中文名有三种脏数据**：空、`PaintKit_xxx`（值是另一个键）、`#Token`，
   必须清洗后回落到内置常用表，否则界面上会出现 `PaintKit_cu_bizon_citizen`
+- **检视图路径不能拼**：M4A4 在 panorama 里叫 `m4a1`，拼 `weapon_m4a4` 会 0 命中；
+  必须按"最长 UI 名前缀"从树里反解（`service._icon_index()`），且**绝不整目录兜底**
+  —— `default_generated` 有 6000+ 张几百 MB，误触发就是几分钟白等
 - **默认选中要挑"能当入口"的 kit**：composite-only 的 kit 没有材质条目，
   一进页面落在它上面会让人以为工具坏了
 

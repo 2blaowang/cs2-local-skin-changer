@@ -74,20 +74,24 @@ def _export(prefix: str, vpk: str, timeout: int = 240) -> tuple[bool, str]:
 
 # ------------------------------------------------------------------ 检视图
 
-def ensure_icons(weapon: str, vpk: str) -> tuple[bool, str]:
-    """导出某武器全部 kit 的检视图 (light 尺寸, 界面用的就是这张)"""
-    ok, msg = _export(ICON_ROOT + f"weapon_{weapon}", vpk)
-    if ok:
-        return True, msg
-    # 有的武器检视图不按 weapon_<名> 前缀 (别名), 退回全目录一次
-    ok2, msg2 = _export(ICON_ROOT, vpk, timeout=600)
-    return ok2, msg + "\n" + msg2 if msg2 else msg
+def ensure_icons(prefixes: list[str], vpk: str) -> tuple[bool, str]:
+    """按 UI 名批量导出某武器的检视图
 
+    传进来的是检视图里的 UI 名 (M4A4 是 m4a1), 由 service.icon_prefixes()
+    反解得到 —— 不要自己拼武器目录名, 拼错会 0 命中。
 
-def icon(weapon: str, kit: str, size: str = "light") -> str | None:
-    p = f"{ICON_ROOT}weapon_{weapon}_{kit}_{size}_png"
-    f = png_path(p)
-    return f if os.path.exists(f) else None
+    注意这里**不做整目录兜底**: default_generated 下有 6000+ 张、几百 MB,
+    一次误触发就是几分钟白等。前缀没命中就如实返回失败。
+    """
+    if not prefixes:
+        return False, "该武器没有检视图资源"
+    ok, msgs = True, []
+    for p in prefixes:
+        o, m = _export(ICON_ROOT + f"weapon_{p}", vpk)
+        ok = ok and o
+        if m:
+            msgs.append(m)
+    return ok, "\n".join(msgs)[-600:]
 
 
 # ------------------------------------------------------------------ 图案本体
